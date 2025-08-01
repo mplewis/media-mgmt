@@ -20,6 +20,13 @@ export interface MediaFile {
   readonly video_bitrate: number
   readonly video_width: number
   readonly video_height: number
+  readonly video_profile?: string
+  readonly video_level?: string
+  readonly pixel_format?: string
+  readonly is_vbr?: boolean
+  readonly color_space?: string
+  readonly color_transfer?: string
+  readonly has_dolby_vision?: boolean
   readonly audio_tracks: readonly AudioTrack[]
   readonly subtitle_tracks: readonly SubtitleTrack[]
   readonly analyzed_at: string
@@ -43,6 +50,10 @@ export interface ColumnVisibility {
   readonly videoCodec: boolean
   readonly bitrate: boolean
   readonly resolution: boolean
+  readonly videoProfile: boolean
+  readonly videoLevel: boolean
+  readonly pixelFormat: boolean
+  readonly colorInfo: boolean
   readonly audioTracks: boolean
   readonly subtitleTracks: boolean
 }
@@ -54,6 +65,10 @@ export type SortableColumn =
   | 'videoCodec'
   | 'bitrate'
   | 'resolution'
+  | 'videoProfile'
+  | 'videoLevel'
+  | 'pixelFormat'
+  | 'colorInfo'
   | 'audioTracks'
   | 'subtitleTracks'
 

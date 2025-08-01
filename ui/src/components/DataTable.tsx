@@ -78,7 +78,7 @@ export const DataTable = ({
                 onClick={() => { handleSort('bitrate') }}
                 className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
               >
-                Bitrate (kbps){getSortIcon('bitrate', sortConfig)}
+                Bitrate (Mbps){getSortIcon('bitrate', sortConfig)}
               </th>
             )}
             {columnVisibility.resolution && (
@@ -87,6 +87,38 @@ export const DataTable = ({
                 className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
               >
                 Resolution{getSortIcon('resolution', sortConfig)}
+              </th>
+            )}
+            {columnVisibility.videoProfile && (
+              <th
+                onClick={() => { handleSort('videoProfile') }}
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+              >
+                Profile{getSortIcon('videoProfile', sortConfig)}
+              </th>
+            )}
+            {columnVisibility.videoLevel && (
+              <th
+                onClick={() => { handleSort('videoLevel') }}
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+              >
+                Level{getSortIcon('videoLevel', sortConfig)}
+              </th>
+            )}
+            {columnVisibility.pixelFormat && (
+              <th
+                onClick={() => { handleSort('pixelFormat') }}
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+              >
+                Pixel Format{getSortIcon('pixelFormat', sortConfig)}
+              </th>
+            )}
+            {columnVisibility.colorInfo && (
+              <th
+                onClick={() => { handleSort('colorInfo') }}
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+              >
+                Color/HDR{getSortIcon('colorInfo', sortConfig)}
               </th>
             )}
             {columnVisibility.audioTracks && (
@@ -137,12 +169,48 @@ export const DataTable = ({
               )}
               {columnVisibility.bitrate && (
                 <td className="px-6 py-4 text-sm text-gray-900 text-right">
-                  {Math.round(item.video_bitrate / 1000)}
+                  {(item.video_bitrate / 1000000).toFixed(1)}
                 </td>
               )}
               {columnVisibility.resolution && (
                 <td className="px-6 py-4 text-sm text-gray-900">
                   {item.video_width}×{item.video_height}
+                </td>
+              )}
+              {columnVisibility.videoProfile && (
+                <td className="px-6 py-4 text-sm text-gray-900">
+                  {item.video_profile || 'N/A'}
+                </td>
+              )}
+              {columnVisibility.videoLevel && (
+                <td className="px-6 py-4 text-sm text-gray-900">
+                  {item.video_level || 'N/A'}
+                </td>
+              )}
+              {columnVisibility.pixelFormat && (
+                <td className="px-6 py-4 text-sm text-gray-900 font-mono text-xs">
+                  {item.pixel_format || 'N/A'}
+                </td>
+              )}
+              {columnVisibility.colorInfo && (
+                <td className="px-6 py-4 text-sm text-gray-900">
+                  <div className="flex flex-col">
+                    {item.color_transfer === 'smpte2084' && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 mb-1">
+                        HDR10
+                      </span>
+                    )}
+                    {item.has_dolby_vision && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 mb-1">
+                        Dolby Vision
+                      </span>
+                    )}
+                    {item.is_vbr && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                        VBR
+                      </span>
+                    )}
+                  </div>
                 </td>
               )}
               {columnVisibility.audioTracks && (

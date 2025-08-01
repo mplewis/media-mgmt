@@ -21,6 +21,10 @@ export const MediaAnalysisReport = (): JSX.Element => {
     videoCodec: true,
     bitrate: true,
     resolution: true,
+    videoProfile: false,
+    videoLevel: false,
+    pixelFormat: false,
+    colorInfo: false,
     audioTracks: true,
     subtitleTracks: true
   })

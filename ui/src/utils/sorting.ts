@@ -39,6 +39,23 @@ export const sortMediaFiles = (
         aVal = a.video_width * a.video_height
         bVal = b.video_width * b.video_height
         break
+      case 'videoProfile':
+        aVal = a.video_profile || ''
+        bVal = b.video_profile || ''
+        break
+      case 'videoLevel':
+        aVal = a.video_level || ''
+        bVal = b.video_level || ''
+        break
+      case 'pixelFormat':
+        aVal = a.pixel_format || ''
+        bVal = b.pixel_format || ''
+        break
+      case 'colorInfo':
+        // Sort by HDR capability (Dolby Vision > HDR10 > SDR)
+        aVal = (a.has_dolby_vision ? 3 : 0) + (a.color_transfer === 'smpte2084' ? 2 : 0) + (a.is_vbr ? 1 : 0)
+        bVal = (b.has_dolby_vision ? 3 : 0) + (b.color_transfer === 'smpte2084' ? 2 : 0) + (b.is_vbr ? 1 : 0)
+        break
       case 'audioTracks':
         aVal = a.audio_tracks.length
         bVal = b.audio_tracks.length
