@@ -86,13 +86,83 @@ window.__MEDIA_DATA__ = MEDIA_DATA;
 		MinifyIdentifiers: true,
 		MinifySyntax:      true,
 		Format:            api.FormatIIFE,
-		Target:            api.ES2020,
+		Target:            api.ES2015,
 		Platform:          api.PlatformBrowser,
-		External:          []string{"react", "react-dom", "react-dom/client"},
 		JSX:               api.JSXAutomatic,
 		GlobalName:        "MediaApp",
 		EntryPoints:       []string{"virtual:index.tsx"},
 		Plugins: []api.Plugin{
+			{
+				Name: "react-globals",
+				Setup: func(build api.PluginBuild) {
+					// Map React imports to global variables
+					build.OnResolve(api.OnResolveOptions{Filter: `^react$`},
+						func(args api.OnResolveArgs) (api.OnResolveResult, error) {
+							return api.OnResolveResult{
+								Path:      "react",
+								Namespace: "react-globals",
+							}, nil
+						})
+					build.OnResolve(api.OnResolveOptions{Filter: `^react-dom$`},
+						func(args api.OnResolveArgs) (api.OnResolveResult, error) {
+							return api.OnResolveResult{
+								Path:      "react-dom",
+								Namespace: "react-globals",
+							}, nil
+						})
+					build.OnResolve(api.OnResolveOptions{Filter: `^react-dom/client$`},
+						func(args api.OnResolveArgs) (api.OnResolveResult, error) {
+							return api.OnResolveResult{
+								Path:      "react-dom/client",
+								Namespace: "react-globals",
+							}, nil
+						})
+					build.OnResolve(api.OnResolveOptions{Filter: `^react/jsx-runtime$`},
+						func(args api.OnResolveArgs) (api.OnResolveResult, error) {
+							return api.OnResolveResult{
+								Path:      "react/jsx-runtime",
+								Namespace: "react-globals",
+							}, nil
+						})
+					
+					// Provide the global variable mappings
+					build.OnLoad(api.OnLoadOptions{Filter: `.*`, Namespace: "react-globals"},
+						func(args api.OnLoadArgs) (api.OnLoadResult, error) {
+							var contents string
+							switch args.Path {
+							case "react":
+								contents = "module.exports = window.React;"
+							case "react-dom":
+								contents = "module.exports = window.ReactDOM;"
+							case "react-dom/client":
+								contents = "module.exports = window.ReactDOM;"
+							case "react/jsx-runtime":
+								contents = `
+var React = window.React;
+function jsx(type, props, key) {
+  if (props && props.children !== undefined) {
+    return React.createElement(type, key ? {...props, key: key} : props, props.children);
+  }
+  return React.createElement(type, key ? {...props, key: key} : props);
+}
+function jsxs(type, props, key) {
+  if (props && props.children !== undefined) {
+    return React.createElement(type, key ? {...props, key: key} : props, ...Array.isArray(props.children) ? props.children : [props.children]);
+  }
+  return React.createElement(type, key ? {...props, key: key} : props);
+}
+module.exports = { jsx: jsx, jsxs: jsxs, Fragment: React.Fragment };
+`
+							default:
+								return api.OnLoadResult{}, fmt.Errorf("unknown react global: %s", args.Path)
+							}
+							return api.OnLoadResult{
+								Contents: &contents,
+								Loader:   api.LoaderJS,
+							}, nil
+						})
+				},
+			},
 			{
 				Name: "virtual-fs",
 				Setup: func(build api.PluginBuild) {

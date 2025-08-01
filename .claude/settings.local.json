@@ -19,7 +19,15 @@
       "Bash(for file in *.tsx)",
       "Bash(do echo \"=== $file ===\")",
       "Bash(done)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(npm run dev:*)",
+      "Bash(open http://localhost:3000/)",
+      "Bash(pkill:*)",
+      "mcp__puppeteer__puppeteer_navigate",
+      "mcp__puppeteer__puppeteer_screenshot",
+      "mcp__puppeteer__puppeteer_evaluate",
+      "mcp__puppeteer__puppeteer_click",
+      "mcp__puppeteer__puppeteer_fill"
     ],
     "deny": []
   }

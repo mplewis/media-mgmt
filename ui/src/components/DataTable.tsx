@@ -112,7 +112,7 @@ export const DataTable = ({
             <tr key={index} className="hover:bg-gray-50">
               {columnVisibility.file && (
                 <td
-                  className="px-6 py-4 text-sm text-gray-900 font-mono max-w-xs truncate"
+                  className="px-6 py-4 text-sm text-gray-900 font-mono"
                   title={item.file_path}
                 >
                   {getDisplayPath(item.file_path, showRelativePaths)}
