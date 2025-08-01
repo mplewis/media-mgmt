@@ -64,18 +64,17 @@ func (mp *MediaProcessor) ProcessFiles(ctx context.Context, filePaths []string) 
 	var mediaInfos []*MediaInfo
 	var errs []error
 	
+	// Since each worker sends to both results and errors channels,
+	// we need to read from both channels for each file
 	for i := 0; i < len(filePaths); i++ {
-		select {
-		case result := <-results:
-			if result != nil {
-				mediaInfos = append(mediaInfos, result)
-			}
-		case err := <-errors:
-			if err != nil {
-				errs = append(errs, err)
-			}
-		case <-ctx.Done():
-			return nil, ctx.Err()
+		result := <-results
+		err := <-errors
+		
+		if result != nil {
+			mediaInfos = append(mediaInfos, result)
+		}
+		if err != nil {
+			errs = append(errs, err)
 		}
 	}
 	
