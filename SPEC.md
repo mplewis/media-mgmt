@@ -1,67 +1,34 @@
 # Plan
 
-This project is called media-mgmt.
+Write a subcommand called `transcode`. It uses FFmpeg to convert one or more
+video files based on existing presets.
 
-- Language: Go
-- Logging framework: Slog
-  - Make sure it has pretty printing, interactive terminal colorization, debug/info/warn/error levels, -v verbose mode, and configuration of log level via LOG_LEVEL env var
-- CLI app
+The purpose of this is to downsize large, high-bitrate video files to smaller
+ones that are equal enough in quality that viewers don't mind.
 
-# Purpose
+When possible, use hardware acceleration. Detect presence of VideoToolbox on the
+system and use when possible.
 
-This app does the following:
+Use `HandBrakeCLI`, i.e.
 
-- Find all video files recursively from the given dir
-- Analyze them for the following details:
-  - Video codec
-  - Bitrate
-  - Audio tracks + details
-  - Subtitle tracks + details
-  - File size
-- Write a report
+```
+HandBrakeCLI -i "input.mkv" -o "input-optimized.mkv" --encoder vt_h265 --quality 80
+```
 
-# Analysis
+# Behavior
 
-Use CPU count to analyze in parallel, or take --parallelism to override.
+If the file is HDR, use H265 10-bit. If not, use H265 8-bit. Use CQ 80 for
+quality. Passthru everything else from source.
 
-Use FFprobe to get media details.
+If an `-optimized` file is found already existing in the destination, we assume
+we already completed the conversion, log it, and skip that file.
 
-# Reporting
+# UI
 
-Reports are generated into a given target folder in the following formats:
+Users can provide --files=a.mkv,b.mkv,c.mkv or --file-list=my-files.txt,
+containing lines with paths to convert.
 
-- CSV
-- MD
-- JSON
-- Interactive one-file HTML with sortable columns
+Output file suffix defaults to `-optimized`, as in `mymedia-optimized.mkv`, and
+can be set by the user at the CLI.
 
-The folder is created if it does not exist.
-
-# Structure
-
-Don't over-factor this app. It is a small reporting app and it will not get much bigger than a simple reporting CLI utility.
-
-For stuff that doesn't require wild mocking, write unit tests.
-
-# Style
-
-Use Go idiomatic style where possible.
-
-Write docstrings for all functions.
-
-Don't write comments in code unless something is very complicated and the comments are absolutely necessary to understand how it works.
-
-# Evaluation
-
-When you're done, use the following folders which contain media to generate reports:
-
-- /Users/mplewis/code/personal/jpguide
-- /Users/mplewis/tmp/snw-season-1
-
-Read the reports and figure out if it's working properly. If not, go back and redo the work until it does.
-
-# Process
-
-You are authorized to do whatever you want to get this done. Install packages, run commands, run tests, run the app, search the web for info.
-
-Do not ask the human for permission to continue. Just go ahead until the project matches this spec.
+`--overwrite` lets a user overwrite existing files.
