@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -346,19 +347,19 @@ func (t *HandBrakeTranscoder) filterHandBrakeOutput(pipe io.ReadCloser) {
 			line := currentLine.String()
 			if matches := progressRegex.FindStringSubmatch(line); matches != nil {
 				percent := matches[1]
-				if len(matches) > 3 {
+				if len(matches) > 3 && matches[2] != "" {
 					fps := matches[2]
 					eta := matches[3]
-					fmt.Printf("\rProgress: %s%% (%s fps, ETA %s)", percent, fps, eta)
+					fmt.Printf("\r%s %s%% (%s fps, ETA %s)", t.createProgressBar(percent), percent, fps, eta)
 				} else {
-					fmt.Printf("\rProgress: %s%%", percent)
+					fmt.Printf("\r%s %s%%", t.createProgressBar(percent), percent)
 				}
 			}
 			currentLine.Reset()
 		} else if char == '\n' {
 			line := currentLine.String()
 			if strings.Contains(line, "Encode done!") {
-				fmt.Printf("\rProgress: 100.0%% - Encode complete!\n")
+				fmt.Printf("\r%s 100.0%% - Encode complete!\n", t.createProgressBar("100.0"))
 			} else if strings.Contains(line, "ERROR") || strings.Contains(line, "WARNING") {
 				fmt.Printf("\n%s\n", line)
 			}
@@ -372,4 +373,41 @@ func (t *HandBrakeTranscoder) filterHandBrakeOutput(pipe io.ReadCloser) {
 		line := currentLine.String()
 		fmt.Printf("%s\n", line)
 	}
+}
+
+func (t *HandBrakeTranscoder) createProgressBar(percentStr string) string {
+	percent, err := strconv.ParseFloat(percentStr, 64)
+	if err != nil {
+		return "[████████████████████] "
+	}
+
+	const barWidth = 20
+	filled := int((percent / 100.0) * float64(barWidth))
+
+	blocks := []rune{'▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'}
+
+	var bar strings.Builder
+	bar.WriteRune('[')
+
+	for i := 0; i < barWidth; i++ {
+		if i < filled {
+			bar.WriteRune(blocks[len(blocks)-1])
+		} else if i == filled {
+			partialProgress := (percent/100.0)*float64(barWidth) - float64(filled)
+			if partialProgress > 0 {
+				blockIndex := int(partialProgress * 8)
+				if blockIndex >= len(blocks) {
+					blockIndex = len(blocks) - 1
+				}
+				bar.WriteRune(blocks[blockIndex])
+			} else {
+				bar.WriteRune(' ')
+			}
+		} else {
+			bar.WriteRune(' ')
+		}
+	}
+
+	bar.WriteRune(']')
+	return bar.String()
 }
