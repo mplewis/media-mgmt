@@ -4,13 +4,13 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
-	"syscall"
 )
 
 type HandBrakeTranscoder struct {
@@ -19,6 +19,7 @@ type HandBrakeTranscoder struct {
 	OutputSuffix string
 	Overwrite    bool
 	Quality      int
+	tempDir      string
 }
 
 type VideoInfo struct {
@@ -32,6 +33,10 @@ type VideoInfo struct {
 func (t *HandBrakeTranscoder) Run(ctx context.Context) error {
 	if err := t.checkHandBrakeCLI(); err != nil {
 		return fmt.Errorf("HandBrakeCLI not available: %w", err)
+	}
+
+	if err := t.setupTempDir(); err != nil {
+		return fmt.Errorf("failed to setup temp directory: %w", err)
 	}
 
 	hasVideoToolbox, err := t.detectVideoToolbox()
@@ -117,10 +122,10 @@ func (t *HandBrakeTranscoder) getFileList() ([]string, error) {
 func (t *HandBrakeTranscoder) transcodeFile(ctx context.Context, filePath string, hasVideoToolbox bool) error {
 	slog.Info("Processing file", "path", filePath)
 
-	outputPath := t.generateOutputPath(filePath)
+	finalOutputPath := t.generateOutputPath(filePath)
 	if !t.Overwrite {
-		if _, err := os.Stat(outputPath); err == nil {
-			slog.Info("Output file already exists, skipping", "output", outputPath)
+		if _, err := os.Stat(finalOutputPath); err == nil {
+			slog.Info("Output file already exists, skipping", "output", finalOutputPath)
 			return nil
 		}
 	}
@@ -132,11 +137,16 @@ func (t *HandBrakeTranscoder) transcodeFile(ctx context.Context, filePath string
 
 	slog.Info("Video info", "hdr", videoInfo.IsHDR, "file", filePath)
 
-	if err := t.executeTranscode(ctx, filePath, outputPath, videoInfo, hasVideoToolbox); err != nil {
+	tempOutputPath := t.generateTempOutputPath(filePath)
+	if err := t.executeTranscode(ctx, filePath, tempOutputPath, videoInfo, hasVideoToolbox); err != nil {
 		return fmt.Errorf("failed to execute transcode: %w", err)
 	}
 
-	slog.Info("Successfully transcoded", "input", filePath, "output", outputPath)
+	if err := t.copyToFinalDestination(tempOutputPath, finalOutputPath); err != nil {
+		return fmt.Errorf("failed to copy to final destination: %w", err)
+	}
+
+	slog.Info("Successfully transcoded", "input", filePath, "output", finalOutputPath)
 	return nil
 }
 
@@ -191,24 +201,6 @@ func (t *HandBrakeTranscoder) detectHDR(ffprobeOutput string) bool {
 }
 
 func (t *HandBrakeTranscoder) executeTranscode(ctx context.Context, inputPath, outputPath string, videoInfo *VideoInfo, hasVideoToolbox bool) error {
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	
-	transcodeCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	go func() {
-		<-sigChan
-		slog.Info("Interrupt received, cleaning up...", "output", outputPath)
-		cancel()
-		
-		if err := os.Remove(outputPath); err != nil && !os.IsNotExist(err) {
-			slog.Warn("Failed to remove incomplete file", "file", outputPath, "error", err)
-		} else {
-			slog.Info("Removed incomplete file", "file", outputPath)
-		}
-		
-		os.Exit(1)
-	}()
 	args := []string{
 		"-i", inputPath,
 		"-o", outputPath,
@@ -234,20 +226,69 @@ func (t *HandBrakeTranscoder) executeTranscode(ctx context.Context, inputPath, o
 
 	slog.Debug("Executing HandBrakeCLI", "args", strings.Join(args, " "))
 
-	cmd := exec.CommandContext(transcodeCtx, "HandBrakeCLI", args...)
+	cmd := exec.CommandContext(ctx, "HandBrakeCLI", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	err := cmd.Run()
-	
+	return cmd.Run()
+}
+
+func (t *HandBrakeTranscoder) setupTempDir() error {
+	tempDir, err := os.MkdirTemp("", "handbrake-transcode-*")
 	if err != nil {
-		if _, statErr := os.Stat(outputPath); statErr == nil {
-			slog.Info("Removing incomplete output file due to error", "file", outputPath)
-			if removeErr := os.Remove(outputPath); removeErr != nil {
-				slog.Warn("Failed to remove incomplete file", "file", outputPath, "error", removeErr)
-			}
-		}
+		return fmt.Errorf("failed to create temp directory: %w", err)
 	}
 	
-	return err
+	t.tempDir = tempDir
+	slog.Debug("Created temp directory", "path", tempDir)
+	
+	runtime.SetFinalizer(t, (*HandBrakeTranscoder).cleanup)
+	return nil
+}
+
+func (t *HandBrakeTranscoder) cleanup() {
+	if t.tempDir != "" {
+		slog.Debug("Cleaning up temp directory", "path", t.tempDir)
+		if err := os.RemoveAll(t.tempDir); err != nil {
+			slog.Warn("Failed to clean up temp directory", "path", t.tempDir, "error", err)
+		}
+	}
+}
+
+func (t *HandBrakeTranscoder) generateTempOutputPath(inputPath string) string {
+	ext := filepath.Ext(inputPath)
+	base := strings.TrimSuffix(filepath.Base(inputPath), ext)
+	return filepath.Join(t.tempDir, base+t.OutputSuffix+".mkv")
+}
+
+func (t *HandBrakeTranscoder) copyToFinalDestination(tempPath, finalPath string) error {
+	slog.Debug("Copying from temp to final destination", "temp", tempPath, "final", finalPath)
+	
+	src, err := os.Open(tempPath)
+	if err != nil {
+		return fmt.Errorf("failed to open temp file: %w", err)
+	}
+	defer src.Close()
+	
+	if err := os.MkdirAll(filepath.Dir(finalPath), 0755); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
+	}
+	
+	dst, err := os.Create(finalPath)
+	if err != nil {
+		return fmt.Errorf("failed to create final file: %w", err)
+	}
+	defer dst.Close()
+	
+	if _, err := io.Copy(dst, src); err != nil {
+		os.Remove(finalPath)
+		return fmt.Errorf("failed to copy file: %w", err)
+	}
+	
+	if err := dst.Sync(); err != nil {
+		os.Remove(finalPath)
+		return fmt.Errorf("failed to sync file: %w", err)
+	}
+	
+	return nil
 }
