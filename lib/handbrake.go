@@ -8,11 +8,16 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
+	"syscall"
+
+	"golang.org/x/term"
 )
 
 type HandBrakeTranscoder struct {
@@ -22,6 +27,8 @@ type HandBrakeTranscoder struct {
 	Overwrite    bool
 	Quality      int
 	tempDir      string
+	termWidth    int
+	termMux      sync.RWMutex
 }
 
 type VideoInfo struct {
@@ -40,6 +47,9 @@ func (t *HandBrakeTranscoder) Run(ctx context.Context) error {
 	if err := t.setupTempDir(); err != nil {
 		return fmt.Errorf("failed to setup temp directory: %w", err)
 	}
+
+	t.initTerminalWidth()
+	t.setupWinchHandler()
 
 	hasVideoToolbox, err := t.detectVideoToolbox()
 	if err != nil {
@@ -121,6 +131,35 @@ func (t *HandBrakeTranscoder) getFileList() ([]string, error) {
 	}
 
 	return files, nil
+}
+
+func (t *HandBrakeTranscoder) initTerminalWidth() {
+	width := 80
+	if term.IsTerminal(int(os.Stdout.Fd())) {
+		if w, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil {
+			width = w
+		}
+	}
+	t.termMux.Lock()
+	t.termWidth = width
+	t.termMux.Unlock()
+}
+
+func (t *HandBrakeTranscoder) setupWinchHandler() {
+	winchChan := make(chan os.Signal, 1)
+	signal.Notify(winchChan, syscall.SIGWINCH)
+
+	go func() {
+		for range winchChan {
+			t.initTerminalWidth()
+		}
+	}()
+}
+
+func (t *HandBrakeTranscoder) getTerminalWidth() int {
+	t.termMux.RLock()
+	defer t.termMux.RUnlock()
+	return t.termWidth
 }
 
 func (t *HandBrakeTranscoder) transcodeFile(ctx context.Context, filePath string, hasVideoToolbox bool, fileNum, totalFiles int) error {
@@ -350,16 +389,33 @@ func (t *HandBrakeTranscoder) filterHandBrakeOutput(pipe io.ReadCloser) {
 				if len(matches) > 3 && matches[2] != "" {
 					fps := matches[2]
 					eta := matches[3]
-					fmt.Printf("\r%s %s%% (%s fps, ETA %s)", t.createProgressBar(percent), percent, fps, eta)
+					extraText := fmt.Sprintf(" (%s fps, ETA %s)", fps, eta)
+					progressBar := t.createProgressBarWithText(percent, extraText)
+					if progressBar != "" {
+						fmt.Printf("\r%s %s%%%s", progressBar, percent, extraText)
+					} else {
+						fmt.Printf("\r%s%%%s", percent, extraText)
+					}
 				} else {
-					fmt.Printf("\r%s %s%%", t.createProgressBar(percent), percent)
+					progressBar := t.createProgressBar(percent)
+					if progressBar != "" {
+						fmt.Printf("\r%s %s%%", progressBar, percent)
+					} else {
+						fmt.Printf("\r%s%%", percent)
+					}
 				}
 			}
 			currentLine.Reset()
 		} else if char == '\n' {
 			line := currentLine.String()
 			if strings.Contains(line, "Encode done!") {
-				fmt.Printf("\r%s 100.0%% - Encode complete!\n", t.createProgressBar("100.0"))
+				completionText := " - Encode done!"
+				progressBar := t.createProgressBarWithText("100.0", completionText)
+				if progressBar != "" {
+					fmt.Printf("\r%s 100.0%%%s\n", progressBar, completionText)
+				} else {
+					fmt.Printf("\r100.0%%%s\n", completionText)
+				}
 			} else if strings.Contains(line, "ERROR") || strings.Contains(line, "WARNING") {
 				fmt.Printf("\n%s\n", line)
 			}
@@ -376,15 +432,31 @@ func (t *HandBrakeTranscoder) filterHandBrakeOutput(pipe io.ReadCloser) {
 }
 
 func (t *HandBrakeTranscoder) createProgressBar(percentStr string) string {
+	return t.createProgressBarWithText(percentStr, "")
+}
+
+func (t *HandBrakeTranscoder) createProgressBarWithText(percentStr, extraText string) string {
+	blocks := []rune{'▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'}
+
 	percent, err := strconv.ParseFloat(percentStr, 64)
 	if err != nil {
-		return "[████████████████████] "
+		return ""
 	}
 
-	const barWidth = 20
-	filled := int((percent / 100.0) * float64(barWidth))
+	termWidth := t.getTerminalWidth()
 
-	blocks := []rune{'▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'}
+	// Calculate actual text width: " XX.X%" + extraText + space for leading space
+	percentText := fmt.Sprintf(" %s%%", percentStr)
+	totalTextWidth := len(percentText) + len(extraText)
+
+	minBarWidth := 10
+	minTotalWidth := minBarWidth + totalTextWidth + 2 // +2 for brackets
+	if termWidth < minTotalWidth {
+		return ""
+	}
+
+	barWidth := termWidth - totalTextWidth - 2 // -2 for brackets
+	filled := int((percent / 100.0) * float64(barWidth))
 
 	var bar strings.Builder
 	bar.WriteRune('[')
