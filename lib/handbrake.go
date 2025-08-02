@@ -189,7 +189,7 @@ func (t *HandBrakeTranscoder) transcodeFile(ctx context.Context, filePath string
 		return fmt.Errorf("failed to copy to final destination: %w", err)
 	}
 
-	fmt.Printf("Successfully transcoded to: %s\n", filepath.Base(finalOutputPath))
+	slog.Info("Successfully transcoded", "file", filepath.Base(finalOutputPath))
 	return nil
 }
 
