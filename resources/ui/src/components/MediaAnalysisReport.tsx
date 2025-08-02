@@ -109,6 +109,14 @@ export const MediaAnalysisReport = (): JSX.Element => {
             </div>
           </div>
 
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={filteredAndSortedData.length}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+          />
+
           <DataTable
             data={paginatedData}
             columnVisibility={columnVisibility}
