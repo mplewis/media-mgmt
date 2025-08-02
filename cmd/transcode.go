@@ -24,6 +24,7 @@ var (
 	transcodeOutputSuffix string
 	transcodeOverwrite    bool
 	transcodeVerbose      bool
+	transcodeQuality      int
 )
 
 func init() {
@@ -32,6 +33,7 @@ func init() {
 	transcodeCmd.Flags().StringVarP(&transcodeOutputSuffix, "suffix", "s", "-optimized", "Output file suffix")
 	transcodeCmd.Flags().BoolVar(&transcodeOverwrite, "overwrite", false, "Overwrite existing output files")
 	transcodeCmd.Flags().BoolVarP(&transcodeVerbose, "verbose", "v", false, "Enable verbose logging")
+	transcodeCmd.Flags().IntVarP(&transcodeQuality, "quality", "q", 80, "Video quality (0-100, higher is better quality)")
 }
 
 func runTranscode(cmd *cobra.Command, args []string) error {
@@ -54,6 +56,7 @@ func runTranscode(cmd *cobra.Command, args []string) error {
 		FileListPath: transcodeFileListPath,
 		OutputSuffix: transcodeOutputSuffix,
 		Overwrite:    transcodeOverwrite,
+		Quality:      transcodeQuality,
 	}
 
 	if err := transcoder.Run(ctx); err != nil {

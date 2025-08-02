@@ -16,6 +16,7 @@ type HandBrakeTranscoder struct {
 	FileListPath string
 	OutputSuffix string
 	Overwrite    bool
+	Quality      int
 }
 
 type VideoInfo struct {
@@ -162,10 +163,10 @@ func (t *HandBrakeTranscoder) generateOutputPath(inputPath string) string {
 
 func (t *HandBrakeTranscoder) getVideoInfo(filePath string) (*VideoInfo, error) {
 	// Use ffprobe to get video information for HDR detection
-	cmd := exec.Command("ffprobe", 
+	cmd := exec.Command("ffprobe",
 		"-v", "quiet",
 		"-print_format", "json",
-		"-show_format", 
+		"-show_format",
 		"-show_streams",
 		filePath)
 
@@ -227,13 +228,8 @@ func (t *HandBrakeTranscoder) executeTranscode(ctx context.Context, inputPath, o
 		}
 	}
 
-	// Set quality (CQ 80 as specified)
-	args = append(args, "--quality", "80")
-
-	// Copy all audio and subtitle tracks (passthrough)
+	args = append(args, "--quality", fmt.Sprintf("%d", t.Quality))
 	args = append(args, "--all-audio", "--all-subtitles")
-
-	// Add format for MKV container
 	args = append(args, "--format", "av_mkv")
 
 	slog.Debug("Executing HandBrakeCLI", "args", strings.Join(args, " "))
