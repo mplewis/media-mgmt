@@ -213,7 +213,11 @@ func (t *HandBrakeTranscoder) executeTranscode(ctx context.Context, inputPath, o
 
 	// Choose encoder based on VideoToolbox availability and HDR content
 	if hasVideoToolbox {
-		args = append(args, "--encoder", "vt_h265")
+		if videoInfo.IsHDR {
+			args = append(args, "--encoder", "vt_h265_10bit")
+		} else {
+			args = append(args, "--encoder", "vt_h265")
+		}
 	} else {
 		// Fallback to software encoder
 		if videoInfo.IsHDR {
