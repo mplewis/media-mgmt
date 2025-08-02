@@ -31,7 +31,7 @@ func init() {
 	transcodeCmd.Flags().StringSliceVarP(&transcodeFiles, "files", "f", []string{}, "Comma-separated list of video files to transcode")
 	transcodeCmd.Flags().StringVarP(&transcodeFileListPath, "file-list", "l", "", "Path to text file containing list of video files (one per line)")
 	transcodeCmd.Flags().StringVarP(&transcodeOutputSuffix, "suffix", "s", "-optimized", "Output file suffix")
-	transcodeCmd.Flags().BoolVar(&transcodeOverwrite, "overwrite", false, "Overwrite existing output files")
+	transcodeCmd.Flags().BoolVarP(&transcodeOverwrite, "overwrite", "o", false, "Overwrite existing output files")
 	transcodeCmd.Flags().BoolVarP(&transcodeVerbose, "verbose", "v", false, "Enable verbose logging")
 	transcodeCmd.Flags().IntVarP(&transcodeQuality, "quality", "q", 80, "Video quality (0-100, higher is better quality)")
 }
