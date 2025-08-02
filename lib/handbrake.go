@@ -7,8 +7,10 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 type HandBrakeTranscoder struct {
@@ -207,6 +209,29 @@ func (t *HandBrakeTranscoder) detectHDR(ffprobeOutput string) bool {
 }
 
 func (t *HandBrakeTranscoder) executeTranscode(ctx context.Context, inputPath, outputPath string, videoInfo *VideoInfo, hasVideoToolbox bool) error {
+	// Set up signal handling to clean up incomplete files on interrupt
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	
+	// Context that gets cancelled on signal
+	transcodeCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	
+	// Goroutine to handle cleanup on interrupt
+	go func() {
+		<-sigChan
+		slog.Info("Interrupt received, cleaning up...", "output", outputPath)
+		cancel()
+		
+		// Remove incomplete output file
+		if err := os.Remove(outputPath); err != nil && !os.IsNotExist(err) {
+			slog.Warn("Failed to remove incomplete file", "file", outputPath, "error", err)
+		} else {
+			slog.Info("Removed incomplete file", "file", outputPath)
+		}
+		
+		os.Exit(1)
+	}()
 	args := []string{
 		"-i", inputPath,
 		"-o", outputPath,
@@ -234,9 +259,21 @@ func (t *HandBrakeTranscoder) executeTranscode(ctx context.Context, inputPath, o
 
 	slog.Debug("Executing HandBrakeCLI", "args", strings.Join(args, " "))
 
-	cmd := exec.CommandContext(ctx, "HandBrakeCLI", args...)
+	cmd := exec.CommandContext(transcodeCtx, "HandBrakeCLI", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	return cmd.Run()
+	err := cmd.Run()
+	
+	// Clean up incomplete file if the command failed
+	if err != nil {
+		if _, statErr := os.Stat(outputPath); statErr == nil {
+			slog.Info("Removing incomplete output file due to error", "file", outputPath)
+			if removeErr := os.Remove(outputPath); removeErr != nil {
+				slog.Warn("Failed to remove incomplete file", "file", outputPath, "error", removeErr)
+			}
+		}
+	}
+	
+	return err
 }
