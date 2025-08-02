@@ -29,7 +29,8 @@
       "mcp__puppeteer__puppeteer_click",
       "mcp__puppeteer__puppeteer_fill",
       "Bash(ffprobe:*)",
-      "Bash(cp:*)"
+      "Bash(cp:*)",
+      "Bash(GOOS=linux GOARCH=amd64 go build -o media-mgmt-linux-amd64)"
     ],
     "deny": []
   }

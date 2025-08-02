@@ -1,6 +1,7 @@
 package main
 
 import (
+	"embed"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -12,6 +13,9 @@ import (
 	"strings"
 	"time"
 )
+
+//go:embed templates/*
+var templatesFS embed.FS
 
 type ReportGenerator struct {
 	outputDir string
@@ -253,8 +257,8 @@ func (rg *ReportGenerator) generateHTMLContent(mediaInfos []*MediaInfo) string {
 		return fmt.Sprintf("<html><body><h1>Error: Failed to build UI</h1><p>%s</p></body></html>", err.Error())
 	}
 
-	// Read template shell
-	templateBytes, err := os.ReadFile("templates/report-shell.html")
+	// Read template shell from embedded filesystem
+	templateBytes, err := templatesFS.ReadFile("templates/report-shell.html")
 	if err != nil {
 		slog.Error("Failed to read HTML template", "error", err)
 		return fmt.Sprintf("<html><body><h1>Error: Failed to load template</h1><p>%s</p></body></html>", err.Error())

@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"os"
 	"sync"
+
+	"github.com/schollz/progressbar/v3"
 )
 
 type MediaProcessor struct {
@@ -38,6 +40,21 @@ func (mp *MediaProcessor) ProcessFiles(ctx context.Context, filePaths []string) 
 	slog.Info("Starting parallel media analysis",
 		"totalFiles", len(filePaths),
 		"workers", mp.parallelism)
+
+	// Create progress bar
+	bar := progressbar.NewOptions(len(filePaths),
+		progressbar.OptionSetDescription("Analyzing files"),
+		progressbar.OptionSetPredictTime(true),
+		progressbar.OptionShowCount(),
+		progressbar.OptionSetWidth(50),
+		progressbar.OptionEnableColorCodes(true),
+		progressbar.OptionSetTheme(progressbar.Theme{
+			Saucer:        "[green]=[reset]",
+			SaucerHead:    "[green]>[reset]",
+			SaucerPadding: " ",
+			BarStart:      "[",
+			BarEnd:        "]",
+		}))
 
 	// Create channels for work distribution
 	jobs := make(chan string, len(filePaths))
@@ -86,7 +103,13 @@ func (mp *MediaProcessor) ProcessFiles(ctx context.Context, filePaths []string) 
 		if err != nil {
 			errs = append(errs, err)
 		}
+
+		// Update progress bar
+		bar.Add(1)
 	}
+
+	// Finish progress bar
+	bar.Finish()
 
 	slog.Info("Parallel media analysis completed",
 		"processedFiles", len(mediaInfos),

@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/schollz/progressbar/v3"
 )
 
 var videoExtensions = map[string]bool{
