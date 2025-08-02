@@ -1,0 +1,22 @@
+presets:
+  - name: "hdr"
+    condition: "hdr"
+    container: "mkv"
+    video:
+      codec: "h265"
+      bit_depth: 10
+      quality: "cq:80"
+      hw_accel: true
+    audio: "passthrough"
+    subtitles: "passthrough"
+    
+  - name: "sdr"
+    condition: "always"
+    container: "mkv"
+    video:
+      codec: "h265"
+      bit_depth: 8
+      quality: "cq:80"
+      hw_accel: true
+    audio: "passthrough"
+    subtitles: "passthrough"
