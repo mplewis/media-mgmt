@@ -44,19 +44,15 @@ func (fs *FileScanner) ScanVideoFiles(ctx context.Context) ([]string, error) {
 			return nil // Continue walking despite individual file errors
 		}
 
-		// Skip directories
 		if info.IsDir() {
 			return nil
 		}
 
-		// Check if file has video extension
 		ext := strings.ToLower(filepath.Ext(path))
 		if videoExtensions[ext] {
 			videoFiles = append(videoFiles, path)
 			slog.Debug("Found video file", "path", path, "size", info.Size())
 		}
-
-		// Check for context cancellation
 		select {
 		case <-ctx.Done():
 			return ctx.Err()

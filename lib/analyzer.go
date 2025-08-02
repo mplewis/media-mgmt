@@ -89,19 +89,16 @@ func NewMediaAnalyzer() *MediaAnalyzer {
 func (ma *MediaAnalyzer) AnalyzeFile(ctx context.Context, filePath string) (*MediaInfo, error) {
 	slog.Debug("Analyzing file", "path", filePath)
 
-	// Get file info
 	fileInfo, err := os.Stat(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat file %s: %w", filePath, err)
 	}
 
-	// Run FFprobe
 	probeData, err := ma.runFFprobe(ctx, filePath)
 	if err != nil {
 		return nil, fmt.Errorf("ffprobe failed for %s: %w", filePath, err)
 	}
 
-	// Parse the results
 	mediaInfo := &MediaInfo{
 		FilePath:       filePath,
 		FileSize:       fileInfo.Size(),
@@ -149,12 +146,10 @@ func (ma *MediaAnalyzer) runFFprobe(ctx context.Context, filePath string) (*FFPr
 }
 
 func (ma *MediaAnalyzer) parseFFprobeOutput(probe *FFProbeOutput, info *MediaInfo) error {
-	// Parse format information
 	if duration, err := strconv.ParseFloat(probe.Format.Duration, 64); err == nil {
 		info.Duration = duration
 	}
 
-	// Try to get overall bitrate from format first
 	var overallBitrate int64
 	if probe.Format.Bitrate != "" {
 		if bitrate, err := strconv.ParseInt(probe.Format.Bitrate, 10, 64); err == nil {
@@ -162,7 +157,6 @@ func (ma *MediaAnalyzer) parseFFprobeOutput(probe *FFProbeOutput, info *MediaInf
 		}
 	}
 
-	// Parse streams
 	for _, stream := range probe.Streams {
 		switch stream.CodecType {
 		case "video":
@@ -174,12 +168,10 @@ func (ma *MediaAnalyzer) parseFFprobeOutput(probe *FFProbeOutput, info *MediaInf
 			info.ColorSpace = stream.ColorSpace
 			info.ColorTransfer = stream.ColorTransfer
 
-			// Convert level to readable format
 			if stream.Level > 0 {
 				info.VideoLevel = formatLevel(stream.Level)
 			}
 
-			// Check for Dolby Vision
 			for _, sideData := range stream.SideDataList {
 				if sideData.SideDataType == "DOVI configuration record" {
 					info.HasDolbyVision = true
@@ -187,13 +179,11 @@ func (ma *MediaAnalyzer) parseFFprobeOutput(probe *FFProbeOutput, info *MediaInf
 				}
 			}
 
-			// Try to get bitrate from stream first
 			if stream.Bitrate != "" {
 				if bitrate, err := strconv.ParseInt(stream.Bitrate, 10, 64); err == nil {
 					info.VideoBitrate = bitrate
 				}
 			} else {
-				// If no direct bitrate, check for BPS in tags (indicates VBR)
 				if bps, exists := stream.Tags["BPS"]; exists {
 					if bitrate, err := strconv.ParseInt(bps, 10, 64); err == nil {
 						info.VideoBitrate = bitrate
@@ -233,25 +223,19 @@ func (ma *MediaAnalyzer) parseFFprobeOutput(probe *FFProbeOutput, info *MediaInf
 		}
 	}
 
-	// If video bitrate is still 0, try fallback methods
 	if info.VideoBitrate == 0 {
-		// Method 1: Use overall bitrate and subtract estimated audio bitrate
 		if overallBitrate > 0 {
 			estimatedAudioBitrate := int64(len(info.AudioTracks)) * 256000 // 256kbps per track estimate
 			if overallBitrate > estimatedAudioBitrate {
 				info.VideoBitrate = overallBitrate - estimatedAudioBitrate
 			} else {
-				// If overall is less than audio estimate, use 85% of overall
 				info.VideoBitrate = int64(float64(overallBitrate) * 0.85)
 			}
 		}
 
-		// Method 2: Calculate from file size and duration (last resort)
 		if info.VideoBitrate == 0 && info.Duration > 0 && info.FileSize > 0 {
-			// Calculate total bitrate from file size and duration
-			totalBits := info.FileSize * 8 // Convert bytes to bits
+			totalBits := info.FileSize * 8
 			totalBitrate := int64(float64(totalBits) / info.Duration)
-			// Estimate video is 85% of total bitrate
 			info.VideoBitrate = int64(float64(totalBitrate) * 0.85)
 		}
 	}

@@ -17,12 +17,10 @@ type App struct {
 func (a *App) Run(ctx context.Context) error {
 	slog.Debug("Application starting", "config", fmt.Sprintf("%+v", a))
 
-	// Check if ffprobe is available
 	if err := CheckFFprobeAvailable(); err != nil {
 		return err
 	}
 
-	// Scan for video files
 	scanner := NewFileScanner(a.InputDir)
 	videoFiles, err := scanner.ScanVideoFiles(ctx)
 	if err != nil {
@@ -34,7 +32,6 @@ func (a *App) Run(ctx context.Context) error {
 		return nil
 	}
 
-	// Set up cache manager if caching is enabled
 	var processor *MediaProcessor
 	if a.NoCache {
 		slog.Debug("Caching disabled, using direct processor")
@@ -45,7 +42,6 @@ func (a *App) Run(ctx context.Context) error {
 			return fmt.Errorf("failed to create cache directory: %w", err)
 		}
 
-		// Clean old cache files (older than 60 days)
 		if err := cache.CleanOldCache(60 * 24 * time.Hour); err != nil {
 			slog.Warn("Failed to clean old cache files", "error", err)
 		}
@@ -54,7 +50,6 @@ func (a *App) Run(ctx context.Context) error {
 		processor = NewMediaProcessorWithCache(a.Parallelism, cache)
 	}
 
-	// Process files in parallel
 	mediaInfos, err := processor.ProcessFiles(ctx, videoFiles)
 	if err != nil {
 		return fmt.Errorf("failed to process video files: %w", err)
@@ -65,7 +60,6 @@ func (a *App) Run(ctx context.Context) error {
 		return nil
 	}
 
-	// Generate reports
 	reporter := NewReportGenerator(a.OutputDir)
 	if err := reporter.GenerateAllReports(mediaInfos); err != nil {
 		return fmt.Errorf("failed to generate reports: %w", err)

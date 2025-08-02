@@ -51,7 +51,6 @@ func (cm *CacheManager) getCacheFilePath(filePath string) string {
 func (cm *CacheManager) HasValidCache(filePath string, fileInfo os.FileInfo) (bool, *MediaInfo, error) {
 	cacheFilePath := cm.getCacheFilePath(filePath)
 
-	// Check if cache file exists
 	_, err := os.Stat(cacheFilePath)
 	if os.IsNotExist(err) {
 		return false, nil, nil
@@ -60,7 +59,6 @@ func (cm *CacheManager) HasValidCache(filePath string, fileInfo os.FileInfo) (bo
 		return false, nil, fmt.Errorf("failed to stat cache file: %w", err)
 	}
 
-	// Read cache entry
 	data, err := os.ReadFile(cacheFilePath)
 	if err != nil {
 		slog.Warn("Failed to read cache file, will re-analyze", "file", filePath, "error", err)
@@ -73,21 +71,18 @@ func (cm *CacheManager) HasValidCache(filePath string, fileInfo os.FileInfo) (bo
 		return false, nil, nil
 	}
 
-	// Check if source file has been modified since cache was created
 	if fileInfo.ModTime().After(entry.FileModTime) {
 		slog.Debug("Source file modified since cache, will re-analyze", "file", filePath,
 			"sourceModTime", fileInfo.ModTime(), "cacheModTime", entry.FileModTime)
 		return false, nil, nil
 	}
 
-	// Check if file size changed
 	if fileInfo.Size() != entry.FileSize {
 		slog.Debug("Source file size changed since cache, will re-analyze", "file", filePath,
 			"sourceSize", fileInfo.Size(), "cacheSize", entry.FileSize)
 		return false, nil, nil
 	}
 
-	// Check if cache is too old (older than 30 days)
 	if time.Since(entry.AnalyzedAt) > 30*24*time.Hour {
 		slog.Debug("Cache entry too old, will re-analyze", "file", filePath, "age", time.Since(entry.AnalyzedAt))
 		return false, nil, nil
@@ -126,7 +121,7 @@ func (cm *CacheManager) CleanOldCache(maxAge time.Duration) error {
 	entries, err := os.ReadDir(cm.CacheDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil // Cache dir doesn't exist, nothing to clean
+			return nil
 		}
 		return fmt.Errorf("failed to read cache directory: %w", err)
 	}

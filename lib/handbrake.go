@@ -30,12 +30,10 @@ type VideoInfo struct {
 }
 
 func (t *HandBrakeTranscoder) Run(ctx context.Context) error {
-	// Check for HandBrakeCLI availability
 	if err := t.checkHandBrakeCLI(); err != nil {
 		return fmt.Errorf("HandBrakeCLI not available: %w", err)
 	}
 
-	// Check for VideoToolbox support
 	hasVideoToolbox, err := t.detectVideoToolbox()
 	if err != nil {
 		slog.Warn("Failed to detect VideoToolbox", "error", err)
@@ -43,7 +41,6 @@ func (t *HandBrakeTranscoder) Run(ctx context.Context) error {
 	}
 	slog.Info("VideoToolbox support", "available", hasVideoToolbox)
 
-	// Get file list
 	files, err := t.getFileList()
 	if err != nil {
 		return fmt.Errorf("failed to get file list: %w", err)
@@ -70,7 +67,6 @@ func (t *HandBrakeTranscoder) checkHandBrakeCLI() error {
 }
 
 func (t *HandBrakeTranscoder) detectVideoToolbox() (bool, error) {
-	// Check if we're on macOS
 	cmd := exec.Command("uname", "-s")
 	output, err := cmd.Output()
 	if err != nil {
@@ -81,14 +77,12 @@ func (t *HandBrakeTranscoder) detectVideoToolbox() (bool, error) {
 		return false, nil
 	}
 
-	// Test VideoToolbox encoder availability with HandBrake
 	cmd = exec.Command("HandBrakeCLI", "--help")
 	output, err = cmd.Output()
 	if err != nil {
 		return false, err
 	}
 
-	// Look for VideoToolbox encoder in help output
 	helpText := string(output)
 	return strings.Contains(helpText, "vt_h265") || strings.Contains(helpText, "VideoToolbox"), nil
 }
@@ -96,10 +90,7 @@ func (t *HandBrakeTranscoder) detectVideoToolbox() (bool, error) {
 func (t *HandBrakeTranscoder) getFileList() ([]string, error) {
 	var files []string
 
-	// Add files from --files flag
 	files = append(files, t.Files...)
-
-	// Add files from --file-list
 	if t.FileListPath != "" {
 		file, err := os.Open(t.FileListPath)
 		if err != nil {
@@ -126,10 +117,7 @@ func (t *HandBrakeTranscoder) getFileList() ([]string, error) {
 func (t *HandBrakeTranscoder) transcodeFile(ctx context.Context, filePath string, hasVideoToolbox bool) error {
 	slog.Info("Processing file", "path", filePath)
 
-	// Generate output filename
 	outputPath := t.generateOutputPath(filePath)
-
-	// Check if output already exists
 	if !t.Overwrite {
 		if _, err := os.Stat(outputPath); err == nil {
 			slog.Info("Output file already exists, skipping", "output", outputPath)
@@ -137,7 +125,6 @@ func (t *HandBrakeTranscoder) transcodeFile(ctx context.Context, filePath string
 		}
 	}
 
-	// Get video info (including HDR detection)
 	videoInfo, err := t.getVideoInfo(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to get video info: %w", err)
@@ -145,7 +132,6 @@ func (t *HandBrakeTranscoder) transcodeFile(ctx context.Context, filePath string
 
 	slog.Info("Video info", "hdr", videoInfo.IsHDR, "file", filePath)
 
-	// Build and execute HandBrake command
 	if err := t.executeTranscode(ctx, filePath, outputPath, videoInfo, hasVideoToolbox); err != nil {
 		return fmt.Errorf("failed to execute transcode: %w", err)
 	}
@@ -159,12 +145,10 @@ func (t *HandBrakeTranscoder) generateOutputPath(inputPath string) string {
 	ext := filepath.Ext(inputPath)
 	base := strings.TrimSuffix(filepath.Base(inputPath), ext)
 
-	// Use MKV container as specified in the original spec
 	return filepath.Join(dir, base+t.OutputSuffix+".mkv")
 }
 
 func (t *HandBrakeTranscoder) getVideoInfo(filePath string) (*VideoInfo, error) {
-	// Use ffprobe to get video information for HDR detection
 	cmd := exec.Command("ffprobe",
 		"-v", "quiet",
 		"-print_format", "json",
@@ -177,7 +161,6 @@ func (t *HandBrakeTranscoder) getVideoInfo(filePath string) (*VideoInfo, error) 
 		return nil, fmt.Errorf("ffprobe failed: %w", err)
 	}
 
-	// Basic HDR detection based on common indicators
 	isHDR := t.detectHDR(string(output))
 
 	return &VideoInfo{
@@ -187,7 +170,6 @@ func (t *HandBrakeTranscoder) getVideoInfo(filePath string) (*VideoInfo, error) 
 }
 
 func (t *HandBrakeTranscoder) detectHDR(ffprobeOutput string) bool {
-	// Look for HDR indicators in ffprobe output
 	hdrIndicators := []string{
 		"bt2020",
 		"smpte2084",
@@ -209,21 +191,16 @@ func (t *HandBrakeTranscoder) detectHDR(ffprobeOutput string) bool {
 }
 
 func (t *HandBrakeTranscoder) executeTranscode(ctx context.Context, inputPath, outputPath string, videoInfo *VideoInfo, hasVideoToolbox bool) error {
-	// Set up signal handling to clean up incomplete files on interrupt
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	
-	// Context that gets cancelled on signal
 	transcodeCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	
-	// Goroutine to handle cleanup on interrupt
 	go func() {
 		<-sigChan
 		slog.Info("Interrupt received, cleaning up...", "output", outputPath)
 		cancel()
 		
-		// Remove incomplete output file
 		if err := os.Remove(outputPath); err != nil && !os.IsNotExist(err) {
 			slog.Warn("Failed to remove incomplete file", "file", outputPath, "error", err)
 		} else {
@@ -237,7 +214,6 @@ func (t *HandBrakeTranscoder) executeTranscode(ctx context.Context, inputPath, o
 		"-o", outputPath,
 	}
 
-	// Choose encoder based on VideoToolbox availability and HDR content
 	if hasVideoToolbox {
 		if videoInfo.IsHDR {
 			args = append(args, "--encoder", "vt_h265_10bit")
@@ -245,7 +221,6 @@ func (t *HandBrakeTranscoder) executeTranscode(ctx context.Context, inputPath, o
 			args = append(args, "--encoder", "vt_h265")
 		}
 	} else {
-		// Fallback to software encoder
 		if videoInfo.IsHDR {
 			args = append(args, "--encoder", "x265_10bit")
 		} else {
@@ -265,7 +240,6 @@ func (t *HandBrakeTranscoder) executeTranscode(ctx context.Context, inputPath, o
 
 	err := cmd.Run()
 	
-	// Clean up incomplete file if the command failed
 	if err != nil {
 		if _, statErr := os.Stat(outputPath); statErr == nil {
 			slog.Info("Removing incomplete output file due to error", "file", outputPath)
