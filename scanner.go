@@ -35,41 +35,41 @@ func NewFileScanner(rootDir string) *FileScanner {
 // ScanVideoFiles recursively finds all video files in the root directory
 func (fs *FileScanner) ScanVideoFiles(ctx context.Context) ([]string, error) {
 	slog.Debug("Starting video file scan", "rootDir", fs.rootDir)
-	
+
 	var videoFiles []string
-	
+
 	err := filepath.Walk(fs.rootDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			slog.Warn("Error accessing path", "path", path, "error", err)
 			return nil // Continue walking despite individual file errors
 		}
-		
+
 		// Skip directories
 		if info.IsDir() {
 			return nil
 		}
-		
+
 		// Check if file has video extension
 		ext := strings.ToLower(filepath.Ext(path))
 		if videoExtensions[ext] {
 			videoFiles = append(videoFiles, path)
 			slog.Debug("Found video file", "path", path, "size", info.Size())
 		}
-		
+
 		// Check for context cancellation
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
 		}
-		
+
 		return nil
 	})
-	
+
 	if err != nil {
 		return nil, err
 	}
-	
+
 	slog.Info("Video file scan completed", "filesFound", len(videoFiles))
 	return videoFiles, nil
 }

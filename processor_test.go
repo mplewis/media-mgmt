@@ -7,7 +7,7 @@ import (
 
 func TestMediaProcessor_ProcessFiles(t *testing.T) {
 	processor := NewMediaProcessor(2)
-	
+
 	// Empty file list should return empty results
 	ctx := context.Background()
 	results, err := processor.ProcessFiles(ctx, []string{})
@@ -21,7 +21,7 @@ func TestMediaProcessor_ProcessFiles(t *testing.T) {
 
 func TestMediaProcessor_WorkerCount(t *testing.T) {
 	testCases := []int{1, 2, 4, 8}
-	
+
 	for _, parallelism := range testCases {
 		processor := NewMediaProcessor(parallelism)
 		if processor.parallelism != parallelism {

@@ -34,10 +34,10 @@ func (ub *UIBuilder) BuildReactBundle(mediaData interface{}) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal media data: %w", err)
 	}
-	
+
 	hash := sha256.Sum256(dataJSON)
 	cacheKey := hex.EncodeToString(hash[:])
-	
+
 	// Check cache first
 	ub.mutex.RLock()
 	if cached, exists := ub.cache[cacheKey]; exists {
@@ -46,25 +46,25 @@ func (ub *UIBuilder) BuildReactBundle(mediaData interface{}) (string, error) {
 		return cached, nil
 	}
 	ub.mutex.RUnlock()
-	
+
 	// Read all source files for esbuild first
 	sourceFiles := make(map[string]string)
 	err = ub.readSourceFiles("resources/ui/src", sourceFiles)
 	if err != nil {
 		return "", fmt.Errorf("failed to read source files: %w", err)
 	}
-	
+
 	slog.Debug("Read embedded TypeScript files", "count", len(sourceFiles))
 	for path := range sourceFiles {
 		slog.Debug("Found embedded file", "path", path)
 	}
-	
+
 	// Check if we have the main entry point
 	indexContent, exists := sourceFiles["index.tsx"]
 	if !exists {
 		return "", fmt.Errorf("index.tsx not found in embedded sources (available: %v)", keys(sourceFiles))
 	}
-	
+
 	// Inject media data as a global constant
 	dataConstant := fmt.Sprintf(`
 // Injected media data
@@ -74,10 +74,10 @@ const MEDIA_DATA = %s;
 window.__MEDIA_DATA__ = MEDIA_DATA;
 
 %s`, string(dataJSON), indexContent)
-	
+
 	// Update the index.tsx content with injected data
 	sourceFiles["index.tsx"] = dataConstant
-	
+
 	// Build with esbuild using virtual file system
 	result := api.Build(api.BuildOptions{
 		Bundle:            true,
@@ -124,7 +124,7 @@ window.__MEDIA_DATA__ = MEDIA_DATA;
 								Namespace: "react-globals",
 							}, nil
 						})
-					
+
 					// Provide the global variable mappings
 					build.OnLoad(api.OnLoadOptions{Filter: `.*`, Namespace: "react-globals"},
 						func(args api.OnLoadArgs) (api.OnLoadResult, error) {
@@ -175,13 +175,13 @@ module.exports = { jsx: jsx, jsxs: jsxs, Fragment: React.Fragment };
 								Namespace: "virtual",
 							}, nil
 						})
-					
+
 					// Handle relative imports
-					build.OnResolve(api.OnResolveOptions{Filter: `^\.`}, 
+					build.OnResolve(api.OnResolveOptions{Filter: `^\.`},
 						func(args api.OnResolveArgs) (api.OnResolveResult, error) {
 							path := args.Path
 							importer := args.Importer
-							
+
 							// Resolve relative paths based on the importer's directory
 							if strings.HasPrefix(path, "../") {
 								// Go up one directory from importer
@@ -207,7 +207,7 @@ module.exports = { jsx: jsx, jsxs: jsxs, Fragment: React.Fragment };
 								}
 								path = importerDir + strings.TrimPrefix(path, "./")
 							}
-							
+
 							// Try to find the file with or without extension
 							if _, exists := sourceFiles[path]; exists {
 								return api.OnResolveResult{
@@ -215,7 +215,7 @@ module.exports = { jsx: jsx, jsxs: jsxs, Fragment: React.Fragment };
 									Namespace: "virtual",
 								}, nil
 							}
-							
+
 							// Try with .tsx extension
 							if _, exists := sourceFiles[path+".tsx"]; exists {
 								return api.OnResolveResult{
@@ -223,7 +223,7 @@ module.exports = { jsx: jsx, jsxs: jsxs, Fragment: React.Fragment };
 									Namespace: "virtual",
 								}, nil
 							}
-							
+
 							// Try with .ts extension
 							if _, exists := sourceFiles[path+".ts"]; exists {
 								return api.OnResolveResult{
@@ -231,10 +231,10 @@ module.exports = { jsx: jsx, jsxs: jsxs, Fragment: React.Fragment };
 									Namespace: "virtual",
 								}, nil
 							}
-							
+
 							return api.OnResolveResult{}, fmt.Errorf("virtual file not found: %s from %s -> resolved to %s (available: %v)", args.Path, importer, path, keys(sourceFiles))
 						})
-					
+
 					// Load files from our virtual file system
 					build.OnLoad(api.OnLoadOptions{Filter: `.*`, Namespace: "virtual"},
 						func(args api.OnLoadArgs) (api.OnLoadResult, error) {
@@ -245,7 +245,7 @@ module.exports = { jsx: jsx, jsxs: jsxs, Fragment: React.Fragment };
 								} else {
 									loader = api.LoaderTS
 								}
-								
+
 								return api.OnLoadResult{
 									Contents: &content,
 									Loader:   loader,
@@ -257,7 +257,7 @@ module.exports = { jsx: jsx, jsxs: jsxs, Fragment: React.Fragment };
 			},
 		},
 	})
-	
+
 	if len(result.Errors) > 0 {
 		var errorMessages []string
 		for _, err := range result.Errors {
@@ -265,22 +265,22 @@ module.exports = { jsx: jsx, jsxs: jsxs, Fragment: React.Fragment };
 		}
 		return "", fmt.Errorf("esbuild errors: %s", strings.Join(errorMessages, "; "))
 	}
-	
+
 	if len(result.OutputFiles) == 0 {
 		return "", fmt.Errorf("no output files generated")
 	}
-	
+
 	bundle := string(result.OutputFiles[0].Contents)
-	
+
 	// Cache the result
 	ub.mutex.Lock()
 	ub.cache[cacheKey] = bundle
 	ub.mutex.Unlock()
-	
-	slog.Debug("Built and cached UI bundle", 
-		"cacheKey", cacheKey[:8], 
+
+	slog.Debug("Built and cached UI bundle",
+		"cacheKey", cacheKey[:8],
 		"bundleSize", len(bundle))
-	
+
 	return bundle, nil
 }
 
@@ -289,10 +289,10 @@ func (ub *UIBuilder) readSourceFiles(basePath string, files map[string]string) e
 	if err != nil {
 		return err
 	}
-	
+
 	for _, entry := range entries {
 		fullPath := basePath + "/" + entry.Name()
-		
+
 		if entry.IsDir() {
 			err := ub.readSourceFiles(fullPath, files)
 			if err != nil {
@@ -303,13 +303,13 @@ func (ub *UIBuilder) readSourceFiles(basePath string, files map[string]string) e
 			if err != nil {
 				return err
 			}
-			
+
 			// Convert full path to relative path for esbuild
 			relativePath := strings.TrimPrefix(fullPath, "resources/ui/src/")
 			files[relativePath] = string(content)
 		}
 	}
-	
+
 	return nil
 }
 

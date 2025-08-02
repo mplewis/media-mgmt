@@ -47,15 +47,15 @@ func (h *ColorHandler) Handle(ctx context.Context, r slog.Record) error {
 
 	levelColor := h.getLevelColor(r.Level)
 	levelText := h.getLevelText(r.Level)
-	
+
 	timestamp := r.Time.Format("15:04:05")
-	
+
 	var attrs []string
 	r.Attrs(func(a slog.Attr) bool {
 		attrs = append(attrs, fmt.Sprintf("%s=%v", a.Key, a.Value))
 		return true
 	})
-	
+
 	var attrsText string
 	if len(attrs) > 0 {
 		attrsText = " " + colorGray + strings.Join(attrs, " ") + colorReset

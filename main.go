@@ -8,6 +8,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -16,6 +17,7 @@ func main() {
 		outputDir   = flag.String("output", "", "Output directory for reports")
 		parallelism = flag.Int("parallelism", runtime.NumCPU(), "Number of parallel workers")
 		verbose     = flag.Bool("v", false, "Enable verbose logging")
+		noCache     = flag.Bool("no-cache", false, "Disable caching of analysis results")
 	)
 	flag.Parse()
 
@@ -39,11 +41,12 @@ func main() {
 		"parallelism", *parallelism)
 
 	ctx := context.Background()
-	
+
 	app := &App{
 		InputDir:    *inputDir,
 		OutputDir:   *outputDir,
 		Parallelism: *parallelism,
+		NoCache:     *noCache,
 	}
 
 	if err := app.Run(ctx); err != nil {
@@ -97,45 +100,65 @@ type App struct {
 	InputDir    string
 	OutputDir   string
 	Parallelism int
+	NoCache     bool
 }
 
 func (a *App) Run(ctx context.Context) error {
 	slog.Debug("Application starting", "config", fmt.Sprintf("%+v", a))
-	
+
 	// Check if ffprobe is available
 	if err := CheckFFprobeAvailable(); err != nil {
 		return err
 	}
-	
+
 	// Scan for video files
 	scanner := NewFileScanner(a.InputDir)
 	videoFiles, err := scanner.ScanVideoFiles(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to scan video files: %w", err)
 	}
-	
+
 	if len(videoFiles) == 0 {
 		slog.Warn("No video files found in directory", "dir", a.InputDir)
 		return nil
 	}
-	
+
+	// Set up cache manager if caching is enabled
+	var processor *MediaProcessor
+	if a.NoCache {
+		slog.Debug("Caching disabled, using direct processor")
+		processor = NewMediaProcessor(a.Parallelism)
+	} else {
+		cache := NewCacheManager(a.OutputDir)
+		if err := cache.EnsureCacheDir(); err != nil {
+			return fmt.Errorf("failed to create cache directory: %w", err)
+		}
+
+		// Clean old cache files (older than 60 days)
+		if err := cache.CleanOldCache(60 * 24 * time.Hour); err != nil {
+			slog.Warn("Failed to clean old cache files", "error", err)
+		}
+
+		slog.Debug("Caching enabled", "cacheDir", cache.CacheDir)
+		processor = NewMediaProcessorWithCache(a.Parallelism, cache)
+	}
+
 	// Process files in parallel
-	processor := NewMediaProcessor(a.Parallelism)
 	mediaInfos, err := processor.ProcessFiles(ctx, videoFiles)
 	if err != nil {
 		return fmt.Errorf("failed to process video files: %w", err)
 	}
-	
+
 	if len(mediaInfos) == 0 {
 		slog.Warn("No files were successfully analyzed")
 		return nil
 	}
-	
+
 	// Generate reports
 	reporter := NewReportGenerator(a.OutputDir)
 	if err := reporter.GenerateAllReports(mediaInfos); err != nil {
 		return fmt.Errorf("failed to generate reports: %w", err)
 	}
-	
+
 	return nil
 }

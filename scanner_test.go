@@ -11,7 +11,7 @@ import (
 func TestFileScanner_ScanVideoFiles(t *testing.T) {
 	// Create a temporary directory structure for testing
 	tempDir := t.TempDir()
-	
+
 	// Create test files
 	testFiles := []struct {
 		path    string
@@ -26,7 +26,7 @@ func TestFileScanner_ScanVideoFiles(t *testing.T) {
 		{"subdir/audio.mp3", false},
 		{"subdir/deep/video5.webm", true},
 	}
-	
+
 	for _, tf := range testFiles {
 		fullPath := filepath.Join(tempDir, tf.path)
 		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
@@ -36,16 +36,16 @@ func TestFileScanner_ScanVideoFiles(t *testing.T) {
 			t.Fatalf("Failed to create test file: %v", err)
 		}
 	}
-	
+
 	// Test scanning
 	scanner := NewFileScanner(tempDir)
 	ctx := context.Background()
-	
+
 	videoFiles, err := scanner.ScanVideoFiles(ctx)
 	if err != nil {
 		t.Fatalf("ScanVideoFiles failed: %v", err)
 	}
-	
+
 	// Count expected video files
 	expectedCount := 0
 	for _, tf := range testFiles {
@@ -53,11 +53,11 @@ func TestFileScanner_ScanVideoFiles(t *testing.T) {
 			expectedCount++
 		}
 	}
-	
+
 	if len(videoFiles) != expectedCount {
 		t.Errorf("Expected %d video files, got %d", expectedCount, len(videoFiles))
 	}
-	
+
 	// Verify all found files are actually video files
 	for _, file := range videoFiles {
 		ext := strings.ToLower(filepath.Ext(file))
@@ -81,7 +81,7 @@ func TestVideoExtensions(t *testing.T) {
 		{"test", false},
 		{"test.mov", true},
 	}
-	
+
 	for _, tc := range testCases {
 		ext := strings.ToLower(filepath.Ext(tc.filename))
 		result := videoExtensions[ext]
