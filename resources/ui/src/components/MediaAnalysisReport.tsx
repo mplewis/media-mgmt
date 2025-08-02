@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import type { SortConfig, ColumnVisibility, SortableColumn } from '../types/media'
 import { useMediaData } from '../hooks/useMediaData'
 import { sortMediaFiles } from '../utils/sorting'
@@ -6,7 +6,9 @@ import { SummaryCards } from './SummaryCards'
 import { SearchBar } from './SearchBar'
 import { PathToggle } from './PathToggle'
 import { ColumnMenu } from './ColumnMenu'
+import { PageSizeSelector } from './PageSizeSelector'
 import { DataTable } from './DataTable'
+import { Pagination } from './Pagination'
 import { Footer } from './Footer'
 
 export const MediaAnalysisReport = (): JSX.Element => {
@@ -29,6 +31,8 @@ export const MediaAnalysisReport = (): JSX.Element => {
     subtitleTracks: true
   })
   const [showColumnMenu, setShowColumnMenu] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
 
   const filteredAndSortedData = useMemo(() => {
     const filtered = data.mediaFiles.filter(item => {
@@ -41,6 +45,24 @@ export const MediaAnalysisReport = (): JSX.Element => {
 
     return sortMediaFiles(filtered, sortConfig, showRelativePaths, data.inputDir)
   }, [data.mediaFiles, searchTerm, sortConfig, showRelativePaths])
+
+  const paginatedData = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize
+    const endIndex = startIndex + pageSize
+    return filteredAndSortedData.slice(startIndex, endIndex)
+  }, [filteredAndSortedData, currentPage, pageSize])
+
+  const totalPages = Math.ceil(filteredAndSortedData.length / pageSize)
+
+  // Reset to page 1 when search term changes
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchTerm])
+
+  const handlePageSizeChange = (newPageSize: number): void => {
+    setPageSize(newPageSize)
+    setCurrentPage(1) // Reset to first page
+  }
 
   const handleSort = (key: SortableColumn): void => {
     setSortConfig(prevConfig => ({
@@ -72,6 +94,11 @@ export const MediaAnalysisReport = (): JSX.Element => {
                   onToggle={setShowRelativePaths}
                 />
 
+                <PageSizeSelector
+                  pageSize={pageSize}
+                  onPageSizeChange={handlePageSizeChange}
+                />
+
                 <ColumnMenu
                   columnVisibility={columnVisibility}
                   showMenu={showColumnMenu}
@@ -83,12 +110,20 @@ export const MediaAnalysisReport = (): JSX.Element => {
           </div>
 
           <DataTable
-            data={filteredAndSortedData}
+            data={paginatedData}
             columnVisibility={columnVisibility}
             sortConfig={sortConfig}
             showRelativePaths={showRelativePaths}
             inputDir={data.inputDir}
             onSort={handleSort}
+          />
+
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={filteredAndSortedData.length}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
           />
 
           <Footer
