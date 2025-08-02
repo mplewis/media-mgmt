@@ -33,10 +33,8 @@
       "Bash(GOOS=linux GOARCH=amd64 go build -o media-mgmt-linux-amd64)",
       "Bash(touch:*)",
       "mcp__puppeteer__puppeteer_select",
-      "Bash(git add:*)",
-      "Bash(git commit:*)",
-      "Bash(git --version)",
-      "Bash(bash -c \"git add .claude/settings.local.json lib/processor_test.go lib/scanner_test.go\")"
+      "Bash(.claude/git_commands.sh:*)",
+      "Bash(HandBrakeCLI:*)",
     ],
     "deny": []
   }
