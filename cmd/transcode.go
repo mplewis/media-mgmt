@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"media-mgmt/lib"
-	"os"
-	"strings"
 
 	"github.com/spf13/cobra"
 )
