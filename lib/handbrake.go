@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 )
@@ -53,8 +54,10 @@ func (t *HandBrakeTranscoder) Run(ctx context.Context) error {
 
 	slog.Info("Processing files", "count", len(files))
 
-	for _, file := range files {
-		if err := t.transcodeFile(ctx, file, hasVideoToolbox); err != nil {
+	for i, file := range files {
+		fileNum := i + 1
+		totalFiles := len(files)
+		if err := t.transcodeFile(ctx, file, hasVideoToolbox, fileNum, totalFiles); err != nil {
 			slog.Error("Failed to transcode file", "file", file, "error", err)
 			continue
 		}
@@ -119,13 +122,13 @@ func (t *HandBrakeTranscoder) getFileList() ([]string, error) {
 	return files, nil
 }
 
-func (t *HandBrakeTranscoder) transcodeFile(ctx context.Context, filePath string, hasVideoToolbox bool) error {
-	slog.Info("Processing file", "path", filePath)
+func (t *HandBrakeTranscoder) transcodeFile(ctx context.Context, filePath string, hasVideoToolbox bool, fileNum, totalFiles int) error {
+	slog.Info("Processing file", "current", fileNum, "total", totalFiles, "file", filepath.Base(filePath))
 
 	finalOutputPath := t.generateOutputPath(filePath)
 	if !t.Overwrite {
 		if _, err := os.Stat(finalOutputPath); err == nil {
-			slog.Info("Output file already exists, skipping", "output", finalOutputPath)
+			slog.Info("Output file already exists, skipping", "file", finalOutputPath)
 			return nil
 		}
 	}
@@ -146,7 +149,7 @@ func (t *HandBrakeTranscoder) transcodeFile(ctx context.Context, filePath string
 		return fmt.Errorf("failed to copy to final destination: %w", err)
 	}
 
-	slog.Info("Successfully transcoded", "input", filePath, "output", finalOutputPath)
+	fmt.Printf("Successfully transcoded to: %s\n", filepath.Base(finalOutputPath))
 	return nil
 }
 
@@ -204,21 +207,26 @@ func (t *HandBrakeTranscoder) executeTranscode(ctx context.Context, inputPath, o
 	args := []string{
 		"-i", inputPath,
 		"-o", outputPath,
+		"--verbose", "1",
 	}
 
+	var encoder string
 	if hasVideoToolbox {
 		if videoInfo.IsHDR {
-			args = append(args, "--encoder", "vt_h265_10bit")
+			encoder = "vt_h265_10bit"
 		} else {
-			args = append(args, "--encoder", "vt_h265")
+			encoder = "vt_h265"
 		}
 	} else {
 		if videoInfo.IsHDR {
-			args = append(args, "--encoder", "x265_10bit")
+			encoder = "x265_10bit"
 		} else {
-			args = append(args, "--encoder", "x265")
+			encoder = "x265"
 		}
 	}
+
+	slog.Info("Using encoder", "encoder", encoder)
+	args = append(args, "--encoder", encoder)
 
 	args = append(args, "--quality", fmt.Sprintf("%d", t.Quality))
 	args = append(args, "--all-audio", "--all-subtitles")
@@ -227,10 +235,25 @@ func (t *HandBrakeTranscoder) executeTranscode(ctx context.Context, inputPath, o
 	slog.Debug("Executing HandBrakeCLI", "args", strings.Join(args, " "))
 
 	cmd := exec.CommandContext(ctx, "HandBrakeCLI", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
 
-	return cmd.Run()
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stderr pipe: %w", err)
+	}
+
+	go t.filterHandBrakeOutput(stdoutPipe)
+	go t.filterHandBrakeOutput(stderrPipe)
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start HandBrakeCLI: %w", err)
+	}
+
+	return cmd.Wait()
 }
 
 func (t *HandBrakeTranscoder) setupTempDir() error {
@@ -238,10 +261,10 @@ func (t *HandBrakeTranscoder) setupTempDir() error {
 	if err != nil {
 		return fmt.Errorf("failed to create temp directory: %w", err)
 	}
-	
+
 	t.tempDir = tempDir
 	slog.Debug("Created temp directory", "path", tempDir)
-	
+
 	runtime.SetFinalizer(t, (*HandBrakeTranscoder).cleanup)
 	return nil
 }
@@ -262,33 +285,91 @@ func (t *HandBrakeTranscoder) generateTempOutputPath(inputPath string) string {
 }
 
 func (t *HandBrakeTranscoder) copyToFinalDestination(tempPath, finalPath string) error {
-	slog.Debug("Copying from temp to final destination", "temp", tempPath, "final", finalPath)
-	
+	slog.Debug("Copying to final destination", "temp", tempPath, "final", finalPath)
+
 	src, err := os.Open(tempPath)
 	if err != nil {
 		return fmt.Errorf("failed to open temp file: %w", err)
 	}
 	defer src.Close()
-	
+
 	if err := os.MkdirAll(filepath.Dir(finalPath), 0755); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
-	
+
 	dst, err := os.Create(finalPath)
 	if err != nil {
 		return fmt.Errorf("failed to create final file: %w", err)
 	}
 	defer dst.Close()
-	
+
 	if _, err := io.Copy(dst, src); err != nil {
 		os.Remove(finalPath)
 		return fmt.Errorf("failed to copy file: %w", err)
 	}
-	
+
 	if err := dst.Sync(); err != nil {
 		os.Remove(finalPath)
 		return fmt.Errorf("failed to sync file: %w", err)
 	}
-	
+
 	return nil
+}
+
+func (t *HandBrakeTranscoder) filterHandBrakeOutput(pipe io.ReadCloser) {
+	defer pipe.Close()
+
+	// Supported progress formats:
+	// Encoding: task 1 of 1, 2.31 %
+	// Encoding: task 1 of 1, 4.50 % (224.12 fps, avg 226.07 fps, ETA 00h02m48s)
+	progressRegex := regexp.MustCompile(`Encoding: task \d+ of \d+, (\d+\.\d+) %(?:\s+\((\d+\.\d+) fps,.*ETA (\d+h\d+m\d+s)\))?`)
+
+	buf := make([]byte, 1)
+	var currentLine strings.Builder
+
+	for {
+		n, err := pipe.Read(buf)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return
+		}
+
+		if n == 0 {
+			continue
+		}
+
+		char := buf[0]
+
+		if char == '\r' {
+			line := currentLine.String()
+			if matches := progressRegex.FindStringSubmatch(line); matches != nil {
+				percent := matches[1]
+				if len(matches) > 3 {
+					fps := matches[2]
+					eta := matches[3]
+					fmt.Printf("\rProgress: %s%% (%s fps, ETA %s)", percent, fps, eta)
+				} else {
+					fmt.Printf("\rProgress: %s%%", percent)
+				}
+			}
+			currentLine.Reset()
+		} else if char == '\n' {
+			line := currentLine.String()
+			if strings.Contains(line, "Encode done!") {
+				fmt.Printf("\rProgress: 100.0%% - Encode complete!\n")
+			} else if strings.Contains(line, "ERROR") || strings.Contains(line, "WARNING") {
+				fmt.Printf("\n%s\n", line)
+			}
+			currentLine.Reset()
+		} else {
+			currentLine.WriteByte(char)
+		}
+	}
+
+	if currentLine.Len() > 0 {
+		line := currentLine.String()
+		fmt.Printf("%s\n", line)
+	}
 }
