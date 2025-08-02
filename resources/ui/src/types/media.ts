@@ -36,6 +36,7 @@ export interface MediaData {
   readonly mediaFiles: readonly MediaFile[]
   readonly totalFiles: number
   readonly generatedAt: string
+  readonly inputDir: string
 }
 
 export interface SortConfig {

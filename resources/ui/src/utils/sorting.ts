@@ -4,7 +4,8 @@ import { getDisplayPath } from './pathUtils'
 export const sortMediaFiles = (
   files: readonly MediaFile[],
   sortConfig: SortConfig,
-  showRelativePaths: boolean
+  showRelativePaths: boolean,
+  inputDir?: string
 ): readonly MediaFile[] => {
   if (sortConfig.key === null) {
     return files
@@ -16,8 +17,8 @@ export const sortMediaFiles = (
 
     switch (sortConfig.key as SortableColumn) {
       case 'file':
-        aVal = getDisplayPath(a.file_path, showRelativePaths)
-        bVal = getDisplayPath(b.file_path, showRelativePaths)
+        aVal = getDisplayPath(a.file_path, showRelativePaths, inputDir)
+        bVal = getDisplayPath(b.file_path, showRelativePaths, inputDir)
         break
       case 'size':
         aVal = a.file_size

@@ -39,7 +39,7 @@ export const MediaAnalysisReport = (): JSX.Element => {
       )
     })
 
-    return sortMediaFiles(filtered, sortConfig, showRelativePaths)
+    return sortMediaFiles(filtered, sortConfig, showRelativePaths, data.inputDir)
   }, [data.mediaFiles, searchTerm, sortConfig, showRelativePaths])
 
   const handleSort = (key: SortableColumn): void => {
@@ -87,6 +87,7 @@ export const MediaAnalysisReport = (): JSX.Element => {
             columnVisibility={columnVisibility}
             sortConfig={sortConfig}
             showRelativePaths={showRelativePaths}
+            inputDir={data.inputDir}
             onSort={handleSort}
           />
 

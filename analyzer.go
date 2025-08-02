@@ -103,9 +103,11 @@ func (ma *MediaAnalyzer) AnalyzeFile(ctx context.Context, filePath string) (*Med
 	
 	// Parse the results
 	mediaInfo := &MediaInfo{
-		FilePath:   filePath,
-		FileSize:   fileInfo.Size(),
-		AnalyzedAt: time.Now(),
+		FilePath:       filePath,
+		FileSize:       fileInfo.Size(),
+		AnalyzedAt:     time.Now(),
+		AudioTracks:    make([]AudioTrack, 0),
+		SubtitleTracks: make([]SubtitleTrack, 0),
 	}
 	
 	if err := ma.parseFFprobeOutput(probeData, mediaInfo); err != nil {

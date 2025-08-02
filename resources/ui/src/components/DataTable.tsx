@@ -7,6 +7,7 @@ interface DataTableProps {
   readonly columnVisibility: ColumnVisibility
   readonly sortConfig: SortConfig
   readonly showRelativePaths: boolean
+  readonly inputDir?: string
   readonly onSort: (column: SortableColumn) => void
 }
 
@@ -22,6 +23,7 @@ export const DataTable = ({
   columnVisibility,
   sortConfig,
   showRelativePaths,
+  inputDir,
   onSort
 }: DataTableProps): JSX.Element => {
   const handleSort = (column: SortableColumn): void => {
@@ -147,7 +149,7 @@ export const DataTable = ({
                   className="px-6 py-4 text-sm text-gray-900 font-mono"
                   title={item.file_path}
                 >
-                  {getDisplayPath(item.file_path, showRelativePaths)}
+                  {getDisplayPath(item.file_path, showRelativePaths, inputDir)}
                 </td>
               )}
               {columnVisibility.size && (

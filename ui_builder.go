@@ -13,7 +13,7 @@ import (
 	"github.com/evanw/esbuild/pkg/api"
 )
 
-//go:embed ui/src ui/src/**/*
+//go:embed resources/ui/src resources/ui/src/**/*
 var uiSources embed.FS
 
 type UIBuilder struct {
@@ -49,7 +49,7 @@ func (ub *UIBuilder) BuildReactBundle(mediaData interface{}) (string, error) {
 	
 	// Read all source files for esbuild first
 	sourceFiles := make(map[string]string)
-	err = ub.readSourceFiles("ui/src", sourceFiles)
+	err = ub.readSourceFiles("resources/ui/src", sourceFiles)
 	if err != nil {
 		return "", fmt.Errorf("failed to read source files: %w", err)
 	}
@@ -305,7 +305,7 @@ func (ub *UIBuilder) readSourceFiles(basePath string, files map[string]string) e
 			}
 			
 			// Convert full path to relative path for esbuild
-			relativePath := strings.TrimPrefix(fullPath, "ui/src/")
+			relativePath := strings.TrimPrefix(fullPath, "resources/ui/src/")
 			files[relativePath] = string(content)
 		}
 	}
