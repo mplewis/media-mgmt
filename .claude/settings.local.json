@@ -30,7 +30,10 @@
       "mcp__puppeteer__puppeteer_fill",
       "Bash(ffprobe:*)",
       "Bash(cp:*)",
-      "Bash(GOOS=linux GOARCH=amd64 go build -o media-mgmt-linux-amd64)"
+      "Bash(GOOS=linux GOARCH=amd64 go build -o media-mgmt-linux-amd64)",
+      "Bash(touch:*)",
+      "mcp__puppeteer__puppeteer_select",
+      "Bash(git add:*)"
     ],
     "deny": []
   }
