@@ -192,6 +192,12 @@ func (t *HandBrakeTranscoder) transcodeFile(ctx context.Context, filePath string
 		return fmt.Errorf("failed to get video info: %w", err)
 	}
 
+	originalFileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to get original file info: %w", err)
+	}
+	originalFileSize := originalFileInfo.Size()
+
 	if err := t.printMediaInfo(filePath); err != nil {
 		slog.Warn("Failed to print media info", "file", filePath, "error", err)
 	}
@@ -255,6 +261,10 @@ func (t *HandBrakeTranscoder) transcodeFile(ctx context.Context, filePath string
 		if err := t.copyToFinalDestination(outputPath, finalOutputPath); err != nil {
 			return fmt.Errorf("failed to copy to final destination: %w", err)
 		}
+	}
+
+	if err := t.printMediaInfoWithRatio(finalOutputPath, originalFileSize); err != nil {
+		slog.Warn("Failed to print media info for converted file", "file", finalOutputPath, "error", err)
 	}
 
 	slog.Info("Successfully transcoded", "file", filepath.Base(finalOutputPath))
@@ -499,6 +509,10 @@ func (t *HandBrakeTranscoder) createProgressBar(percentStr string) string {
 }
 
 func (t *HandBrakeTranscoder) printMediaInfo(filePath string) error {
+	return t.printMediaInfoWithRatio(filePath, 0)
+}
+
+func (t *HandBrakeTranscoder) printMediaInfoWithRatio(filePath string, originalFileSize int64) error {
 	analyzer := NewMediaAnalyzer()
 	mediaInfo, err := analyzer.AnalyzeFile(context.Background(), filePath)
 	if err != nil {
@@ -531,14 +545,21 @@ func (t *HandBrakeTranscoder) printMediaInfo(filePath string) error {
 		bitrateStr = fmt.Sprintf("%.0f kbps", float64(mediaInfo.VideoBitrate)/1000)
 	}
 
-	slog.Info("Media info",
+	logFields := []interface{}{
 		"resolution", fmt.Sprintf("%dx%d", mediaInfo.VideoWidth, mediaInfo.VideoHeight),
 		"duration", durationStr,
 		"size", sizeStr,
 		"bitrate", bitrateStr,
 		"codec", mediaInfo.VideoCodec,
 		"hdr", mediaInfo.HasDolbyVision || mediaInfo.ColorTransfer == "smpte2084" || mediaInfo.ColorSpace == "bt2020nc",
-	)
+	}
+
+	if originalFileSize > 0 {
+		ratio := float64(mediaInfo.FileSize) / float64(originalFileSize)
+		logFields = append(logFields, "size_ratio", fmt.Sprintf("%.1f%%", ratio*100))
+	}
+
+	slog.Info("Media info", logFields...)
 	return nil
 }
 
