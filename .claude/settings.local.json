@@ -34,7 +34,7 @@
       "Bash(touch:*)",
       "mcp__puppeteer__puppeteer_select",
       "Bash(.claude/git_commands.sh:*)",
-      "Bash(HandBrakeCLI:*)",
+      "Bash(HandBrakeCLI:*)"
     ],
     "deny": []
   }

@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 	"media-mgmt/lib"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 )
@@ -51,7 +54,17 @@ func runTranscode(cmd *cobra.Command, args []string) error {
 		"suffix", transcodeOutputSuffix,
 		"overwrite", transcodeOverwrite)
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		sig := <-sigChan
+		slog.Info("Received signal, shutting down gracefully", "signal", sig)
+		cancel()
+	}()
 
 	transcoder := &lib.HandBrakeTranscoder{
 		Files:        transcodeFiles,
@@ -63,6 +76,10 @@ func runTranscode(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := transcoder.Run(ctx); err != nil {
+		if ctx.Err() == context.Canceled {
+			slog.Info("Transcoding was cancelled by user")
+			return nil
+		}
 		return fmt.Errorf("transcoding failed: %w", err)
 	}
 

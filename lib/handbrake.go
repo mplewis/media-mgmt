@@ -69,10 +69,21 @@ func (t *HandBrakeTranscoder) Run(ctx context.Context) error {
 	slog.Info("Processing files", "count", len(files))
 
 	for i, file := range files {
+		select {
+		case <-ctx.Done():
+			slog.Info("Context cancelled, stopping file processing")
+			return ctx.Err()
+		default:
+		}
+
 		fileNum := i + 1
 		totalFiles := len(files)
 		if err := t.transcodeFile(ctx, file, hasVideoToolbox, fileNum, totalFiles); err != nil {
 			slog.Error("Failed to transcode file", "file", file, "error", err)
+			if ctx.Err() != nil {
+				slog.Info("Context cancelled, stopping file processing")
+				return ctx.Err()
+			}
 			continue
 		}
 	}
@@ -195,8 +206,32 @@ func (t *HandBrakeTranscoder) transcodeFile(ctx context.Context, filePath string
 		}
 	}
 
-	if err := t.executeTranscode(ctx, filePath, outputPath, videoInfo, hasVideoToolbox, t.WriteInPlace); err != nil {
-		return fmt.Errorf("failed to execute transcode: %w", err)
+	var cleanupFile bool
+	if t.WriteInPlace {
+		cleanupFile = true
+		defer func() {
+			if cleanupFile {
+				if err := os.Remove(outputPath); err != nil {
+					slog.Warn("Failed to clean up unfinished file", "file", outputPath, "error", err)
+				} else {
+					slog.Info("Cleaned up unfinished file", "file", outputPath)
+				}
+			}
+		}()
+	}
+
+	transcodeErr := t.executeTranscode(ctx, filePath, outputPath, videoInfo, hasVideoToolbox, t.WriteInPlace)
+	
+	if t.WriteInPlace {
+		if transcodeErr != nil {
+			cleanupFile = true
+		} else {
+			cleanupFile = false
+		}
+	}
+	
+	if transcodeErr != nil {
+		return fmt.Errorf("failed to execute transcode: %w", transcodeErr)
 	}
 
 	if t.WriteInPlace {
@@ -323,7 +358,6 @@ func (t *HandBrakeTranscoder) executeTranscode(ctx context.Context, inputPath, o
 	}
 
 	return cmd.Wait()
-	// TODO: Delete in-progress file on user abort
 }
 
 func (t *HandBrakeTranscoder) setupTempDir() error {
