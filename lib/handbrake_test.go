@@ -149,7 +149,7 @@ file5.avi`
 
 func TestCheckHandBrakeCLI(t *testing.T) {
 	transcoder := &HandBrakeTranscoder{}
-	
+
 	// This test will pass if HandBrakeCLI is installed, otherwise it will fail
 	// In a real CI environment, you might want to mock this or skip the test
 	err := transcoder.checkHandBrakeCLI()
@@ -161,16 +161,16 @@ func TestCheckHandBrakeCLI(t *testing.T) {
 
 func TestDetectVideoToolbox(t *testing.T) {
 	transcoder := &HandBrakeTranscoder{}
-	
+
 	// This test checks VideoToolbox detection
 	// Results will vary based on platform
 	hasVT, err := transcoder.detectVideoToolbox()
 	if err != nil {
 		t.Logf("VideoToolbox detection error: %v", err)
 	}
-	
+
 	t.Logf("VideoToolbox available: %v", hasVT)
-	
+
 	// On macOS, VideoToolbox should be available if HandBrake is installed
 	// On other platforms, it should be false
 }

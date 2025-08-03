@@ -192,6 +192,10 @@ func (t *HandBrakeTranscoder) transcodeFile(ctx context.Context, filePath string
 		return fmt.Errorf("failed to get video info: %w", err)
 	}
 
+	if err := t.printMediaInfo(filePath); err != nil {
+		slog.Warn("Failed to print media info", "file", filePath, "error", err)
+	}
+
 	var outputPath string
 	if t.WriteInPlace {
 		outputPath = finalOutputPath
@@ -221,7 +225,7 @@ func (t *HandBrakeTranscoder) transcodeFile(ctx context.Context, filePath string
 	}
 
 	transcodeErr := t.executeTranscode(ctx, filePath, outputPath, videoInfo, hasVideoToolbox, t.WriteInPlace)
-	
+
 	if t.WriteInPlace {
 		if transcodeErr != nil {
 			cleanupFile = true
@@ -229,7 +233,7 @@ func (t *HandBrakeTranscoder) transcodeFile(ctx context.Context, filePath string
 			cleanupFile = false
 		}
 	}
-	
+
 	if transcodeErr != nil {
 		return fmt.Errorf("failed to execute transcode: %w", transcodeErr)
 	}
@@ -492,6 +496,50 @@ func (t *HandBrakeTranscoder) filterHandBrakeOutput(pipe io.ReadCloser) {
 
 func (t *HandBrakeTranscoder) createProgressBar(percentStr string) string {
 	return t.createProgressBarWithText(percentStr, "")
+}
+
+func (t *HandBrakeTranscoder) printMediaInfo(filePath string) error {
+	analyzer := NewMediaAnalyzer()
+	mediaInfo, err := analyzer.AnalyzeFile(context.Background(), filePath)
+	if err != nil {
+		return err
+	}
+
+	var sizeStr string
+	if mediaInfo.FileSize >= 1024*1024*1024 {
+		sizeStr = fmt.Sprintf("%.1f GB", float64(mediaInfo.FileSize)/(1024*1024*1024))
+	} else if mediaInfo.FileSize >= 1024*1024 {
+		sizeStr = fmt.Sprintf("%.1f MB", float64(mediaInfo.FileSize)/(1024*1024))
+	} else {
+		sizeStr = fmt.Sprintf("%.1f KB", float64(mediaInfo.FileSize)/1024)
+	}
+
+	hours := int(mediaInfo.Duration) / 3600
+	minutes := int(mediaInfo.Duration) / 60
+	seconds := int(mediaInfo.Duration) % 60
+	var durationStr string
+	if hours > 0 {
+		durationStr = fmt.Sprintf("%d:%02d:%02d", hours, minutes, seconds)
+	} else {
+		durationStr = fmt.Sprintf("%d:%02d", minutes, seconds)
+	}
+
+	var bitrateStr string
+	if mediaInfo.VideoBitrate >= 1000000 {
+		bitrateStr = fmt.Sprintf("%.1f Mbps", float64(mediaInfo.VideoBitrate)/1000000)
+	} else {
+		bitrateStr = fmt.Sprintf("%.0f kbps", float64(mediaInfo.VideoBitrate)/1000)
+	}
+
+	slog.Info("Media info",
+		"resolution", fmt.Sprintf("%dx%d", mediaInfo.VideoWidth, mediaInfo.VideoHeight),
+		"duration", durationStr,
+		"size", sizeStr,
+		"bitrate", bitrateStr,
+		"codec", mediaInfo.VideoCodec,
+		"hdr", mediaInfo.HasDolbyVision || mediaInfo.ColorTransfer == "smpte2084" || mediaInfo.ColorSpace == "bt2020nc",
+	)
+	return nil
 }
 
 func (t *HandBrakeTranscoder) createProgressBarWithText(percentStr, extraText string) string {
