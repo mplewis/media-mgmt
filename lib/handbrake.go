@@ -528,15 +528,7 @@ func (t *HandBrakeTranscoder) printMediaInfoWithRatio(filePath string, originalF
 		sizeStr = fmt.Sprintf("%.1f KB", float64(mediaInfo.FileSize)/1024)
 	}
 
-	hours := int(mediaInfo.Duration) / 3600
-	minutes := int(mediaInfo.Duration) / 60
-	seconds := int(mediaInfo.Duration) % 60
-	var durationStr string
-	if hours > 0 {
-		durationStr = fmt.Sprintf("%d:%02d:%02d", hours, minutes, seconds)
-	} else {
-		durationStr = fmt.Sprintf("%d:%02d", minutes, seconds)
-	}
+	durationStr := FormatDuration(mediaInfo.Duration)
 
 	var bitrateStr string
 	if mediaInfo.VideoBitrate >= 1000000 {
