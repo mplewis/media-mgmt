@@ -202,13 +202,13 @@ func (t *HandBrakeTranscoder) transcodeFile(ctx context.Context, filePath string
 		slog.Warn("Failed to print media info", "file", filePath, "error", err)
 	}
 
-	var outputPath string
+	var inProgressPath string
 	if t.WriteInPlace {
-		outputPath = finalOutputPath
+		inProgressPath = finalOutputPath + ".tmp"
 	} else {
-		outputPath = t.generateTempOutputPath(filePath)
+		inProgressPath = t.generateTempOutputPath(filePath)
 	}
-	outputDir := filepath.Dir(outputPath)
+	outputDir := filepath.Dir(inProgressPath)
 
 	if t.WriteInPlace {
 		if err := os.MkdirAll(outputDir, 0755); err != nil {
@@ -221,31 +221,32 @@ func (t *HandBrakeTranscoder) transcodeFile(ctx context.Context, filePath string
 		cleanupFile = true
 		defer func() {
 			if cleanupFile {
-				if err := os.Remove(outputPath); err != nil {
-					slog.Warn("Failed to clean up unfinished file", "file", outputPath, "error", err)
+				if err := os.Remove(inProgressPath); err != nil {
+					slog.Warn("Failed to clean up unfinished file", "file", inProgressPath, "error", err)
 				} else {
-					slog.Info("Cleaned up unfinished file", "file", outputPath)
+					slog.Info("Cleaned up unfinished file", "file", inProgressPath)
 				}
 			}
 		}()
 	}
 
-	transcodeErr := t.executeTranscode(ctx, filePath, outputPath, videoInfo, hasVideoToolbox, t.WriteInPlace)
-
-	if t.WriteInPlace {
-		if transcodeErr != nil {
-			cleanupFile = true
-		} else {
-			cleanupFile = false
-		}
-	}
+	transcodeErr := t.executeTranscode(ctx, filePath, inProgressPath, videoInfo, hasVideoToolbox, t.WriteInPlace)
 
 	if transcodeErr != nil {
+		if t.WriteInPlace {
+			cleanupFile = true
+		}
 		return fmt.Errorf("failed to execute transcode: %w", transcodeErr)
 	}
 
 	if t.WriteInPlace {
-		dirFile, err := os.Open(outputDir)
+		if err := os.Rename(inProgressPath, finalOutputPath); err != nil {
+			cleanupFile = true
+			return fmt.Errorf("failed to move temp file to final location: %w", err)
+		}
+		cleanupFile = false
+
+		dirFile, err := os.Open(filepath.Dir(finalOutputPath))
 		if err != nil {
 			return fmt.Errorf("failed to open directory for sync: %w", err)
 		}
@@ -254,11 +255,10 @@ func (t *HandBrakeTranscoder) transcodeFile(ctx context.Context, filePath string
 		if err := dirFile.Sync(); err != nil {
 			return fmt.Errorf("failed to sync directory to disk: %w", err)
 		}
-
-		slog.Debug("Directory synced to disk", "dir", outputDir)
+		slog.Debug("Directory synced to disk", "dir", filepath.Dir(finalOutputPath))
 
 	} else {
-		if err := t.copyToFinalDestination(outputPath, finalOutputPath); err != nil {
+		if err := t.copyToFinalDestination(inProgressPath, finalOutputPath); err != nil {
 			return fmt.Errorf("failed to copy to final destination: %w", err)
 		}
 	}
