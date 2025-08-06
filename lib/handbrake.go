@@ -332,20 +332,7 @@ func (t *HandBrakeTranscoder) executeTranscode(ctx context.Context, inputPath, o
 		"--verbose", "1",
 	}
 
-	var encoder string
-	if hasVideoToolbox {
-		if videoInfo.IsHDR {
-			encoder = "vt_h265_10bit"
-		} else {
-			encoder = "vt_h265"
-		}
-	} else {
-		if videoInfo.IsHDR {
-			encoder = "x265_10bit"
-		} else {
-			encoder = "x265"
-		}
-	}
+	encoder := t.selectEncoder(videoInfo, hasVideoToolbox)
 
 	slog.Info("Using encoder", "encoder", encoder)
 	args = append(args, "--encoder", encoder)
@@ -356,26 +343,7 @@ func (t *HandBrakeTranscoder) executeTranscode(ctx context.Context, inputPath, o
 
 	slog.Debug("Executing HandBrakeCLI", "args", strings.Join(args, " "))
 
-	cmd := exec.CommandContext(ctx, "HandBrakeCLI", args...)
-
-	stdoutPipe, err := cmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("failed to create stdout pipe: %w", err)
-	}
-
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		return fmt.Errorf("failed to create stderr pipe: %w", err)
-	}
-
-	go t.filterHandBrakeOutput(stdoutPipe)
-	go t.filterHandBrakeOutput(stderrPipe)
-
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start HandBrakeCLI: %w", err)
-	}
-
-	return cmd.Wait()
+	return t.runHandBrakeCLI(ctx, args)
 }
 
 func (t *HandBrakeTranscoder) filterHandBrakeOutput(pipe io.ReadCloser) {
@@ -553,6 +521,45 @@ func (t *HandBrakeTranscoder) createProgressBarWithText(percentStr, extraText st
 	return bar.String()
 }
 
+func (t *HandBrakeTranscoder) runHandBrakeCLI(ctx context.Context, args []string) error {
+	cmd := exec.CommandContext(ctx, "HandBrakeCLI", args...)
+
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stderr pipe: %w", err)
+	}
+
+	go t.filterHandBrakeOutput(stdoutPipe)
+	go t.filterHandBrakeOutput(stderrPipe)
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start HandBrakeCLI: %w", err)
+	}
+
+	return cmd.Wait()
+}
+
+func (t *HandBrakeTranscoder) selectEncoder(videoInfo *VideoInfo, hasVideoToolbox bool) string {
+	if hasVideoToolbox {
+		if videoInfo.IsHDR {
+			return "vt_h265_10bit"
+		} else {
+			return "vt_h265"
+		}
+	} else {
+		if videoInfo.IsHDR {
+			return "x265_10bit"
+		} else {
+			return "x265"
+		}
+	}
+}
+
 func (t *HandBrakeTranscoder) checkSkipFile(filePath string) bool {
 	skipPath := strings.TrimSuffix(filePath, filepath.Ext(filePath)) + ".skip"
 	_, err := os.Stat(skipPath)
@@ -571,20 +578,7 @@ func (t *HandBrakeTranscoder) checkSizeSavings(ctx context.Context, filePath str
 	savingsPercent := float64(savingsBytes) / float64(originalFileSize) * 100
 
 	if savingsPercent < float64(t.MinSavingsPercent) {
-		var encoder string
-		if hasVideoToolbox {
-			if videoInfo.IsHDR {
-				encoder = "vt_h265_10bit"
-			} else {
-				encoder = "vt_h265"
-			}
-		} else {
-			if videoInfo.IsHDR {
-				encoder = "x265_10bit"
-			} else {
-				encoder = "x265"
-			}
-		}
+		encoder := t.selectEncoder(videoInfo, hasVideoToolbox)
 
 		slog.Info("Skipping file, insufficient space savings",
 			"file", filepath.Base(filePath),
@@ -680,35 +674,16 @@ func (t *HandBrakeTranscoder) encodeSegment(ctx context.Context, inputPath, outp
 		"-o", outputPath,
 		"--start-at", fmt.Sprintf("duration:%.0f", startTime),
 		"--stop-at", fmt.Sprintf("duration:%.0f", duration),
+		"--verbose", "1",
 	}
 
-	var encoder string
-	if hasVideoToolbox {
-		if videoInfo.IsHDR {
-			encoder = "vt_h265_10bit"
-		} else {
-			encoder = "vt_h265"
-		}
-	} else {
-		if videoInfo.IsHDR {
-			encoder = "x265_10bit"
-		} else {
-			encoder = "x265"
-		}
-	}
-
+	encoder := t.selectEncoder(videoInfo, hasVideoToolbox)
 	args = append(args, "--encoder", encoder)
 	args = append(args, "--quality", fmt.Sprintf("%d", t.Quality))
 	args = append(args, "--all-audio", "--all-subtitles")
 	args = append(args, "--format", "av_mkv")
 
-	cmd := exec.CommandContext(ctx, "HandBrakeCLI", args...)
-
-	// Capture output to avoid cluttering console
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-
-	if err := cmd.Run(); err != nil {
+	if err := t.runHandBrakeCLI(ctx, args); err != nil {
 		return 0, fmt.Errorf("HandBrakeCLI failed: %w", err)
 	}
 
