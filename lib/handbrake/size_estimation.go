@@ -12,22 +12,29 @@ import (
 	"time"
 )
 
+// SkipInfo contains metadata about why a file was skipped during transcoding.
+// Stored as JSON in .skip files to prevent re-processing files that don't meet savings criteria.
 type SkipInfo struct {
-	Reason             string    `json:"reason"`
-	Quality            int       `json:"quality"`
-	Encoder            string    `json:"encoder"`
-	Timestamp          time.Time `json:"timestamp"`
-	OriginalSizeBytes  int64     `json:"original_size_bytes"`
-	EstimatedSizeBytes int64     `json:"estimated_size_bytes"`
-	RequiredSizeBytes  int64     `json:"required_size_bytes"`
+	Reason             string    `json:"reason"`               // Reason for skipping (e.g., "insufficient_savings")
+	Quality            int       `json:"quality"`              // Quality setting used for estimation
+	Encoder            string    `json:"encoder"`              // Encoder that would have been used
+	Timestamp          time.Time `json:"timestamp"`            // When the skip decision was made
+	OriginalSizeBytes  int64     `json:"original_size_bytes"`  // Original file size in bytes
+	EstimatedSizeBytes int64     `json:"estimated_size_bytes"` // Estimated output size in bytes
+	RequiredSizeBytes  int64     `json:"required_size_bytes"`  // Minimum size required to meet savings threshold
 }
 
+// checkSkipFile determines if a skip file exists for the given input file.
+// Returns true if a .skip file is found, indicating the file should be skipped.
 func (t *HandBrakeTranscoder) checkSkipFile(filePath string) bool {
 	skipPath := strings.TrimSuffix(filePath, filepath.Ext(filePath)) + ".skip"
 	_, err := os.Stat(skipPath)
 	return err == nil
 }
 
+// checkSizeSavings estimates output size and determines if the file should be skipped.
+// Performs size estimation and compares against the minimum savings threshold.
+// Returns true if the file should be skipped (insufficient savings), false to proceed.
 func (t *HandBrakeTranscoder) checkSizeSavings(ctx context.Context, filePath string, originalFileSize int64, videoInfo *lib.VideoInfo, hasVideoToolbox bool) (bool, error) {
 	slog.Info("Estimating output size", "file", filepath.Base(filePath))
 
@@ -58,6 +65,9 @@ func (t *HandBrakeTranscoder) checkSizeSavings(ctx context.Context, filePath str
 	return false, nil
 }
 
+// createSkipFile generates a .skip file with metadata about why the file was skipped.
+// Creates a JSON file containing size estimates, encoder settings, and skip reasons.
+// This prevents re-processing the file in future runs.
 func (t *HandBrakeTranscoder) createSkipFile(filePath string, reason string, originalSize, estimatedSize int64, encoder string) error {
 	skipPath := strings.TrimSuffix(filePath, filepath.Ext(filePath)) + ".skip"
 	requiredSize := int64(float64(originalSize) * (100 - float64(t.MinSavingsPercent)) / 100)
@@ -81,6 +91,9 @@ func (t *HandBrakeTranscoder) createSkipFile(filePath string, reason string, ori
 	return nil
 }
 
+// estimateOutputSize calculates approximate output file size by encoding test segments.
+// Encodes 3 segments of 10 seconds each at 25%, 50%, and 75% through the video.
+// Averages the results and extrapolates to the full video duration.
 func (t *HandBrakeTranscoder) estimateOutputSize(ctx context.Context, inputPath string, videoInfo *lib.VideoInfo, hasVideoToolbox bool) (int64, error) {
 	segmentDuration := 10.0                  // seconds
 	positions := []float64{0.25, 0.50, 0.75} // 25%, 50%, 75% through video
@@ -130,6 +143,9 @@ func (t *HandBrakeTranscoder) estimateOutputSize(ctx context.Context, inputPath 
 	return estimatedSize, nil
 }
 
+// encodeSegment encodes a small portion of video for size estimation purposes.
+// Uses the same encoder and quality settings as the full transcode.
+// Returns the size of the encoded segment in bytes, or an error if encoding fails.
 func (t *HandBrakeTranscoder) encodeSegment(ctx context.Context, inputPath, outputPath string, startTime, duration float64, videoInfo *lib.VideoInfo, hasVideoToolbox bool) (int64, error) {
 	args := []string{
 		"-i", inputPath,

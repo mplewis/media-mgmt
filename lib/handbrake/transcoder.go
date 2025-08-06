@@ -17,17 +17,23 @@ import (
 	"golang.org/x/term"
 )
 
+// HandBrakeTranscoder manages video transcoding operations using HandBrakeCLI.
+// Supports batch processing, size estimation, and intelligent skipping of files
+// that don't meet minimum space savings requirements.
 type HandBrakeTranscoder struct {
-	Files             []string
-	FileListPath      string
-	OutputSuffix      string
-	Overwrite         bool
-	Quality           int
-	MinSavingsPercent int
-	termWidth         int
-	termMux           sync.RWMutex
+	Files             []string // List of files to transcode
+	FileListPath      string   // Path to text file containing file list
+	OutputSuffix      string   // Suffix for output files (e.g., "-optimized")
+	Overwrite         bool     // Whether to overwrite existing output files
+	Quality           int      // Video quality setting (0-100, higher is better)
+	MinSavingsPercent int      // Minimum space savings required (0 disables)
+	termWidth         int      // Current terminal width for progress bars
+	termMux           sync.RWMutex // Mutex for terminal width access
 }
 
+// Run executes the transcoding process for all configured files.
+// Handles setup, file processing, and graceful shutdown on context cancellation.
+// Returns an error if HandBrakeCLI is unavailable or if critical failures occur.
 func (t *HandBrakeTranscoder) Run(ctx context.Context) error {
 	if err := t.checkHandBrakeCLI(); err != nil {
 		return fmt.Errorf("HandBrakeCLI not available: %w", err)
@@ -73,6 +79,9 @@ func (t *HandBrakeTranscoder) Run(ctx context.Context) error {
 	return nil
 }
 
+// transcodeFile processes a single video file through the complete transcoding pipeline.
+// Handles output path checking, skip file validation, size estimation, and actual transcoding.
+// Returns an error if any step fails, or nil if the file is successfully processed or skipped.
 func (t *HandBrakeTranscoder) transcodeFile(ctx context.Context, filePath string, hasVideoToolbox bool, fileNum, totalFiles int) error {
 	slog.Info("Processing file", "current", fileNum, "total", totalFiles, "file", filepath.Base(filePath))
 
@@ -152,6 +161,8 @@ func (t *HandBrakeTranscoder) transcodeFile(ctx context.Context, filePath string
 	return nil
 }
 
+// checkHandBrakeCLI verifies that HandBrakeCLI is available in the system PATH.
+// Returns an error with installation instructions if HandBrakeCLI is not found.
 func (t *HandBrakeTranscoder) checkHandBrakeCLI() error {
 	_, err := exec.LookPath("HandBrakeCLI")
 	if err != nil {
@@ -160,6 +171,9 @@ func (t *HandBrakeTranscoder) checkHandBrakeCLI() error {
 	return nil
 }
 
+// detectVideoToolbox checks if VideoToolbox hardware acceleration is available.
+// Only available on macOS systems with compatible hardware.
+// Returns true if VideoToolbox encoders are detected in HandBrakeCLI help output.
 func (t *HandBrakeTranscoder) detectVideoToolbox() (bool, error) {
 	cmd := exec.Command("uname", "-s")
 	output, err := cmd.Output()
@@ -181,6 +195,9 @@ func (t *HandBrakeTranscoder) detectVideoToolbox() (bool, error) {
 	return strings.Contains(helpText, "vt_h265") || strings.Contains(helpText, "VideoToolbox"), nil
 }
 
+// getFileList combines files from direct specification and file list into a single slice.
+// Processes the FileListPath if specified, filtering out comments and empty lines.
+// Returns the combined list of files to process, or an error if file reading fails.
 func (t *HandBrakeTranscoder) getFileList() ([]string, error) {
 	var files []string
 
@@ -208,6 +225,9 @@ func (t *HandBrakeTranscoder) getFileList() ([]string, error) {
 	return files, nil
 }
 
+// initTerminalWidth determines and stores the current terminal width.
+// Uses a default of 80 columns if terminal detection fails.
+// Thread-safe access via mutex for concurrent progress bar rendering.
 func (t *HandBrakeTranscoder) initTerminalWidth() {
 	width := 80
 	if term.IsTerminal(int(os.Stdout.Fd())) {
@@ -220,6 +240,9 @@ func (t *HandBrakeTranscoder) initTerminalWidth() {
 	t.termMux.Unlock()
 }
 
+// setupWinchHandler installs a signal handler for terminal resize events (SIGWINCH).
+// Automatically updates terminal width when the terminal is resized.
+// Runs in a background goroutine for the lifetime of the transcoder.
 func (t *HandBrakeTranscoder) setupWinchHandler() {
 	winchChan := make(chan os.Signal, 1)
 	signal.Notify(winchChan, syscall.SIGWINCH)
@@ -231,6 +254,8 @@ func (t *HandBrakeTranscoder) setupWinchHandler() {
 	}()
 }
 
+// getTerminalWidth returns the current terminal width in a thread-safe manner.
+// Used by progress bar rendering functions to determine available display space.
 func (t *HandBrakeTranscoder) getTerminalWidth() int {
 	t.termMux.RLock()
 	defer t.termMux.RUnlock()

@@ -10,6 +10,9 @@ import (
 	"strings"
 )
 
+// runHandBrakeCLI executes HandBrakeCLI with the provided arguments.
+// Handles output filtering, progress parsing, and provides a consistent interface
+// for all HandBrake command execution throughout the application.
 func (t *HandBrakeTranscoder) runHandBrakeCLI(ctx context.Context, args []string) error {
 	cmd := exec.CommandContext(ctx, "HandBrakeCLI", args...)
 
@@ -33,6 +36,9 @@ func (t *HandBrakeTranscoder) runHandBrakeCLI(ctx context.Context, args []string
 	return cmd.Wait()
 }
 
+// filterHandBrakeOutput processes HandBrake's output stream to extract progress information.
+// Parses encoding progress, displays progress bars, and filters relevant messages.
+// Runs in a separate goroutine to avoid blocking the main encoding process.
 func (t *HandBrakeTranscoder) filterHandBrakeOutput(pipe io.ReadCloser) {
 	defer pipe.Close()
 
@@ -108,10 +114,15 @@ func (t *HandBrakeTranscoder) filterHandBrakeOutput(pipe io.ReadCloser) {
 	}
 }
 
+// createProgressBar generates a visual progress bar for the given percentage.
+// Wrapper around createProgressBarWithText with no additional text.
 func (t *HandBrakeTranscoder) createProgressBar(percentStr string) string {
 	return t.createProgressBarWithText(percentStr, "")
 }
 
+// createProgressBarWithText renders a Unicode progress bar with optional additional text.
+// Dynamically adjusts bar width based on terminal size and text content.
+// Uses Unicode block characters for smooth progress visualization.
 func (t *HandBrakeTranscoder) createProgressBarWithText(percentStr, extraText string) string {
 	blocks := []rune{'▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'}
 

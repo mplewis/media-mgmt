@@ -1,22 +1,25 @@
 package lib
 
 import (
+	"fmt"
+	"log/slog"
 	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
-	"log/slog"
-	"fmt"
 )
 
+// VideoInfo contains metadata about a video file extracted from ffprobe.
 type VideoInfo struct {
-	Path     string
-	IsHDR    bool
-	Width    int
-	Height   int
-	Duration float64
+	Path     string  // Full path to the video file
+	IsHDR    bool    // Whether the video contains HDR content
+	Width    int     // Video width in pixels
+	Height   int     // Video height in pixels
+	Duration float64 // Duration in seconds
 }
 
+// GetVideoInfo extracts video metadata from a file using ffprobe.
+// Returns VideoInfo with duration and HDR detection, or an error if ffprobe fails.
 func GetVideoInfo(filePath string) (*VideoInfo, error) {
 	cmd := exec.Command("ffprobe",
 		"-v", "quiet",
@@ -41,6 +44,8 @@ func GetVideoInfo(filePath string) (*VideoInfo, error) {
 	}, nil
 }
 
+// parseDuration extracts the duration from ffprobe JSON output.
+// Returns the duration in seconds, or a default of 3600 seconds if parsing fails.
 func parseDuration(ffprobeOutput string) float64 {
 	// Try to extract duration from format section first
 	durationRegex := regexp.MustCompile(`"duration"\s*:\s*"([^"]+)"`)
@@ -56,6 +61,9 @@ func parseDuration(ffprobeOutput string) float64 {
 	return 3600.0 // 1 hour default
 }
 
+// DetectHDR analyzes ffprobe output to determine if video contains HDR content.
+// Checks for various HDR indicators including color primaries, transfer functions, and pixel formats.
+// Returns true if any HDR indicators are found (case-insensitive), false otherwise.
 func DetectHDR(ffprobeOutput string) bool {
 	hdrIndicators := []string{
 		"bt2020",
