@@ -3,6 +3,7 @@ package lib
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,18 +16,20 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"golang.org/x/term"
 )
 
 type HandBrakeTranscoder struct {
-	Files        []string
-	FileListPath string
-	OutputSuffix string
-	Overwrite    bool
-	Quality      int
-	termWidth    int
-	termMux      sync.RWMutex
+	Files             []string
+	FileListPath      string
+	OutputSuffix      string
+	Overwrite         bool
+	Quality           int
+	MinSavingsPercent int
+	termWidth         int
+	termMux           sync.RWMutex
 }
 
 type VideoInfo struct {
@@ -35,6 +38,16 @@ type VideoInfo struct {
 	Width    int
 	Height   int
 	Duration float64
+}
+
+type SkipInfo struct {
+	Reason             string    `json:"reason"`
+	Quality            int       `json:"quality"`
+	Encoder            string    `json:"encoder"`
+	Timestamp          time.Time `json:"timestamp"`
+	OriginalSizeBytes  int64     `json:"original_size_bytes"`
+	EstimatedSizeBytes int64     `json:"estimated_size_bytes"`
+	RequiredSizeBytes  int64     `json:"required_size_bytes"`
 }
 
 func (t *HandBrakeTranscoder) Run(ctx context.Context) error {
@@ -178,6 +191,13 @@ func (t *HandBrakeTranscoder) transcodeFile(ctx context.Context, filePath string
 		}
 	}
 
+	if t.MinSavingsPercent > 0 {
+		if t.checkSkipFile(filePath) {
+			slog.Info("Skipping media with skip file", "file", filepath.Base(filePath))
+			return nil
+		}
+	}
+
 	videoInfo, err := t.getVideoInfo(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to get video info: %w", err)
@@ -191,6 +211,15 @@ func (t *HandBrakeTranscoder) transcodeFile(ctx context.Context, filePath string
 
 	if err := t.printMediaInfo(filePath); err != nil {
 		slog.Warn("Failed to print media info", "file", filePath, "error", err)
+	}
+
+	if t.MinSavingsPercent > 0 {
+		shouldSkip, err := t.checkSizeSavings(ctx, filePath, originalFileSize, videoInfo, hasVideoToolbox)
+		if err != nil {
+			slog.Warn("Size check failed, proceeding with full encode", "file", filePath, "error", err)
+		} else if shouldSkip {
+			return nil
+		}
 	}
 
 	inProgressPath := finalOutputPath + ".tmp"
@@ -249,12 +278,30 @@ func (t *HandBrakeTranscoder) getVideoInfo(filePath string) (*VideoInfo, error) 
 		return nil, fmt.Errorf("ffprobe failed: %w", err)
 	}
 
-	isHDR := t.detectHDR(string(output))
+	outputStr := string(output)
+	isHDR := t.detectHDR(outputStr)
+	duration := t.parseDuration(outputStr)
 
 	return &VideoInfo{
-		Path:  filePath,
-		IsHDR: isHDR,
+		Path:     filePath,
+		IsHDR:    isHDR,
+		Duration: duration,
 	}, nil
+}
+
+func (t *HandBrakeTranscoder) parseDuration(ffprobeOutput string) float64 {
+	// Try to extract duration from format section first
+	durationRegex := regexp.MustCompile(`"duration"\s*:\s*"([^"]+)"`)
+	matches := durationRegex.FindStringSubmatch(ffprobeOutput)
+	if len(matches) > 1 {
+		if duration, err := strconv.ParseFloat(matches[1], 64); err == nil {
+			return duration
+		}
+	}
+
+	// Fallback to a default if we can't parse
+	slog.Warn("Could not parse video duration from ffprobe output, using default")
+	return 3600.0 // 1 hour default
 }
 
 func (t *HandBrakeTranscoder) detectHDR(ffprobeOutput string) bool {
@@ -504,4 +551,180 @@ func (t *HandBrakeTranscoder) createProgressBarWithText(percentStr, extraText st
 
 	bar.WriteRune(']')
 	return bar.String()
+}
+
+func (t *HandBrakeTranscoder) checkSkipFile(filePath string) bool {
+	skipPath := strings.TrimSuffix(filePath, filepath.Ext(filePath)) + ".skip"
+	_, err := os.Stat(skipPath)
+	return err == nil
+}
+
+func (t *HandBrakeTranscoder) checkSizeSavings(ctx context.Context, filePath string, originalFileSize int64, videoInfo *VideoInfo, hasVideoToolbox bool) (bool, error) {
+	slog.Info("Estimating output size", "file", filepath.Base(filePath))
+
+	estimatedSize, err := t.estimateOutputSize(ctx, filePath, videoInfo, hasVideoToolbox)
+	if err != nil {
+		return false, err
+	}
+
+	savingsBytes := originalFileSize - estimatedSize
+	savingsPercent := float64(savingsBytes) / float64(originalFileSize) * 100
+
+	if savingsPercent < float64(t.MinSavingsPercent) {
+		var encoder string
+		if hasVideoToolbox {
+			if videoInfo.IsHDR {
+				encoder = "vt_h265_10bit"
+			} else {
+				encoder = "vt_h265"
+			}
+		} else {
+			if videoInfo.IsHDR {
+				encoder = "x265_10bit"
+			} else {
+				encoder = "x265"
+			}
+		}
+
+		slog.Info("Skipping file, insufficient space savings",
+			"file", filepath.Base(filePath),
+			"estimated_savings", fmt.Sprintf("%.1f%%", savingsPercent),
+			"required_savings", fmt.Sprintf("%d%%", t.MinSavingsPercent))
+		if err := t.createSkipFile(filePath, "insufficient_savings", originalFileSize, estimatedSize, encoder); err != nil {
+			slog.Warn("Failed to create skip file", "file", filePath, "error", err)
+		}
+		return true, nil
+	}
+
+	slog.Info("Size estimation passed threshold",
+		"file", filepath.Base(filePath),
+		"estimated_savings", fmt.Sprintf("%.1f%%", savingsPercent))
+	return false, nil
+}
+
+func (t *HandBrakeTranscoder) createSkipFile(filePath string, reason string, originalSize, estimatedSize int64, encoder string) error {
+	skipPath := strings.TrimSuffix(filePath, filepath.Ext(filePath)) + ".skip"
+	requiredSize := int64(float64(originalSize) * (100 - float64(t.MinSavingsPercent)) / 100)
+	skipInfo := SkipInfo{
+		Reason:             reason,
+		Quality:            t.Quality,
+		Encoder:            encoder,
+		Timestamp:          time.Now(),
+		OriginalSizeBytes:  originalSize,
+		EstimatedSizeBytes: estimatedSize,
+		RequiredSizeBytes:  requiredSize,
+	}
+
+	data, err := json.MarshalIndent(skipInfo, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal skip info: %w", err)
+	}
+	if err := os.WriteFile(skipPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write skip file: %w", err)
+	}
+	return nil
+}
+
+func (t *HandBrakeTranscoder) estimateOutputSize(ctx context.Context, inputPath string, videoInfo *VideoInfo, hasVideoToolbox bool) (int64, error) {
+	segmentDuration := 10.0                  // seconds
+	positions := []float64{0.25, 0.50, 0.75} // 25%, 50%, 75% through video
+
+	var totalSize int64
+	var successfulSegments int
+
+	for i, pos := range positions {
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		default:
+		}
+
+		startTime := videoInfo.Duration * pos
+		testOutputPath := fmt.Sprintf("%s.size-test-%d.mkv", inputPath, i+1)
+
+		// Clean up test file when done
+		defer func(path string) {
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				slog.Warn("Failed to clean up test file", "file", path, "error", err)
+			}
+		}(testOutputPath)
+
+		segmentSize, err := t.encodeSegment(ctx, inputPath, testOutputPath, startTime, segmentDuration, videoInfo, hasVideoToolbox)
+		if err != nil {
+			slog.Warn("Failed to encode test segment", "segment", i+1, "error", err)
+			continue
+		}
+
+		totalSize += segmentSize
+		successfulSegments++
+	}
+
+	if successfulSegments == 0 {
+		return 0, fmt.Errorf("failed to encode any test segments")
+	}
+
+	avgBytesPerSecond := float64(totalSize) / (float64(successfulSegments) * segmentDuration)
+	estimatedSize := int64(avgBytesPerSecond * videoInfo.Duration)
+
+	slog.Debug("Size estimation",
+		"successful_segments", successfulSegments,
+		"avg_bytes_per_second", int64(avgBytesPerSecond),
+		"estimated_size_bytes", estimatedSize)
+
+	return estimatedSize, nil
+}
+
+func (t *HandBrakeTranscoder) encodeSegment(ctx context.Context, inputPath, outputPath string, startTime, duration float64, videoInfo *VideoInfo, hasVideoToolbox bool) (int64, error) {
+	args := []string{
+		"-i", inputPath,
+		"-o", outputPath,
+		"--start-at", fmt.Sprintf("duration:%.0f", startTime),
+		"--stop-at", fmt.Sprintf("duration:%.0f", duration),
+	}
+
+	var encoder string
+	if hasVideoToolbox {
+		if videoInfo.IsHDR {
+			encoder = "vt_h265_10bit"
+		} else {
+			encoder = "vt_h265"
+		}
+	} else {
+		if videoInfo.IsHDR {
+			encoder = "x265_10bit"
+		} else {
+			encoder = "x265"
+		}
+	}
+
+	args = append(args, "--encoder", encoder)
+	args = append(args, "--quality", fmt.Sprintf("%d", t.Quality))
+	args = append(args, "--all-audio", "--all-subtitles")
+	args = append(args, "--format", "av_mkv")
+
+	cmd := exec.CommandContext(ctx, "HandBrakeCLI", args...)
+
+	// Capture output to avoid cluttering console
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+
+	if err := cmd.Run(); err != nil {
+		return 0, fmt.Errorf("HandBrakeCLI failed: %w", err)
+	}
+
+	fileInfo, err := os.Stat(outputPath)
+	if err != nil {
+		return 0, fmt.Errorf("failed to stat output file: %w", err)
+	}
+	return fileInfo.Size(), nil
+}
+
+func (t *HandBrakeTranscoder) formatSize(bytes int64) string {
+	if bytes >= 1024*1024*1024 {
+		return fmt.Sprintf("%.1f GB", float64(bytes)/(1024*1024*1024))
+	} else if bytes >= 1024*1024 {
+		return fmt.Sprintf("%.1f MB", float64(bytes)/(1024*1024))
+	} else {
+		return fmt.Sprintf("%.1f KB", float64(bytes)/1024)
+	}
 }
