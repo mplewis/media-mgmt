@@ -111,7 +111,6 @@ func (t *HandBrakeTranscoder) estimateOutputSize(ctx context.Context, inputPath 
 		startTime := videoInfo.Duration * pos
 		testOutputPath := fmt.Sprintf("%s.size-test-%d.mkv", inputPath, i+1)
 
-		// Clean up test file when done
 		defer func(path string) {
 			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 				slog.Warn("Failed to clean up test file", "file", path, "error", err)

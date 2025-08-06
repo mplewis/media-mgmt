@@ -10,6 +10,10 @@ import (
 	"strings"
 )
 
+var (
+	progressRegex = regexp.MustCompile(`Encoding: task \d+ of \d+, (\d+\.\d+) %(?:\s+\((\d+\.\d+) fps,.*ETA (\d+h\d+m\d+s)\))?`)
+)
+
 // runHandBrakeCLI executes HandBrakeCLI with the provided arguments.
 // Handles output filtering, progress parsing, and provides a consistent interface
 // for all HandBrake command execution throughout the application.
@@ -45,7 +49,6 @@ func (t *HandBrakeTranscoder) filterHandBrakeOutput(pipe io.ReadCloser) {
 	// Supported progress formats:
 	// Encoding: task 1 of 1, 2.31 %
 	// Encoding: task 1 of 1, 4.50 % (224.12 fps, avg 226.07 fps, ETA 00h02m48s)
-	progressRegex := regexp.MustCompile(`Encoding: task \d+ of \d+, (\d+\.\d+) %(?:\s+\((\d+\.\d+) fps,.*ETA (\d+h\d+m\d+s)\))?`)
 
 	buf := make([]byte, 1)
 	var currentLine strings.Builder

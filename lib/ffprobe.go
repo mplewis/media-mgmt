@@ -2,11 +2,14 @@ package lib
 
 import (
 	"fmt"
-	"log/slog"
 	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
+)
+
+var (
+	durationRegex = regexp.MustCompile(`"duration"\s*:\s*"([^"]+)"`)
 )
 
 // VideoInfo contains metadata about a video file extracted from ffprobe.
@@ -35,7 +38,10 @@ func GetVideoInfo(filePath string) (*VideoInfo, error) {
 
 	outputStr := string(output)
 	isHDR := DetectHDR(outputStr)
-	duration := parseDuration(outputStr)
+	duration, err := parseDuration(outputStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse video duration: %w", err)
+	}
 
 	return &VideoInfo{
 		Path:     filePath,
@@ -45,20 +51,17 @@ func GetVideoInfo(filePath string) (*VideoInfo, error) {
 }
 
 // parseDuration extracts the duration from ffprobe JSON output.
-// Returns the duration in seconds, or a default of 3600 seconds if parsing fails.
-func parseDuration(ffprobeOutput string) float64 {
+// Returns the duration in seconds, or an error if parsing fails.
+func parseDuration(ffprobeOutput string) (float64, error) {
 	// Try to extract duration from format section first
-	durationRegex := regexp.MustCompile(`"duration"\s*:\s*"([^"]+)"`)
 	matches := durationRegex.FindStringSubmatch(ffprobeOutput)
 	if len(matches) > 1 {
 		if duration, err := strconv.ParseFloat(matches[1], 64); err == nil {
-			return duration
+			return duration, nil
 		}
 	}
 
-	// Fallback to a default if we can't parse
-	slog.Warn("Could not parse video duration from ffprobe output, using default")
-	return 3600.0 // 1 hour default
+	return 0, fmt.Errorf("could not parse video duration from ffprobe output")
 }
 
 // DetectHDR analyzes ffprobe output to determine if video contains HDR content.
