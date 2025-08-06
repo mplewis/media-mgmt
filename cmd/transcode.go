@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"media-mgmt/lib"
+	"media-mgmt/lib/handbrake"
 	"os"
 	"os/signal"
 	"syscall"
@@ -67,7 +67,7 @@ func runTranscode(cmd *cobra.Command, args []string) error {
 		cancel()
 	}()
 
-	transcoder := &lib.HandBrakeTranscoder{
+	transcoder := &handbrake.HandBrakeTranscoder{
 		Files:             transcodeFiles,
 		FileListPath:      transcodeFileListPath,
 		OutputSuffix:      transcodeOutputSuffix,

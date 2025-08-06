@@ -1,6 +1,7 @@
-package lib
+package handbrake
 
 import (
+	"media-mgmt/lib"
 	"os"
 	"path/filepath"
 	"testing"
@@ -48,8 +49,6 @@ func TestGenerateOutputPath(t *testing.T) {
 }
 
 func TestDetectHDR(t *testing.T) {
-	transcoder := &HandBrakeTranscoder{}
-
 	tests := []struct {
 		name     string
 		output   string
@@ -84,7 +83,7 @@ func TestDetectHDR(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := transcoder.detectHDR(tt.output)
+			result := lib.DetectHDR(tt.output)
 			if result != tt.expected {
 				t.Errorf("Expected %v, got %v", tt.expected, result)
 			}
