@@ -35,7 +35,9 @@
       "mcp__puppeteer__puppeteer_select",
       "Bash(.claude/git_commands.sh:*)",
       "Bash(HandBrakeCLI:*)",
-      "Bash(go doc:*)"
+      "Bash(go doc:*)",
+      "Bash(go install:*)",
+      "Bash(ginkgo:*)"
     ],
     "deny": []
   }

@@ -15,8 +15,8 @@ type VideoStreamScore struct {
 
 // VideoStreamClassification categorizes video streams
 type VideoStreamClassification struct {
-	Primary   *Stream   // The main video stream
-	Auxiliary []Stream  // Thumbnail, cover art, etc.
+	Primary   *Stream  // The main video stream
+	Auxiliary []Stream // Thumbnail, cover art, etc.
 }
 
 // ClassifyVideoStreams analyzes video streams and identifies the primary one
@@ -26,14 +26,13 @@ func ClassifyVideoStreams(streams []Stream, formatDuration float64) *VideoStream
 	if len(videoStreams) == 0 {
 		return &VideoStreamClassification{}
 	}
-	
+
 	if len(videoStreams) == 1 {
 		return &VideoStreamClassification{
 			Primary: &videoStreams[0],
 		}
 	}
-	
-	// Score each video stream
+
 	scores := make([]VideoStreamScore, len(videoStreams))
 	for i, stream := range videoStreams {
 		scores[i] = VideoStreamScore{
@@ -42,8 +41,7 @@ func ClassifyVideoStreams(streams []Stream, formatDuration float64) *VideoStream
 			Index:  i,
 		}
 	}
-	
-	// Find the highest scoring stream
+
 	primaryIndex := 0
 	maxScore := scores[0].Score
 	for i, score := range scores[1:] {
@@ -52,8 +50,7 @@ func ClassifyVideoStreams(streams []Stream, formatDuration float64) *VideoStream
 			primaryIndex = i + 1
 		}
 	}
-	
-	// Separate primary from auxiliary streams
+
 	primary := videoStreams[primaryIndex]
 	auxiliary := make([]Stream, 0, len(videoStreams)-1)
 	for i, stream := range videoStreams {
@@ -61,7 +58,7 @@ func ClassifyVideoStreams(streams []Stream, formatDuration float64) *VideoStream
 			auxiliary = append(auxiliary, stream)
 		}
 	}
-	
+
 	return &VideoStreamClassification{
 		Primary:   &primary,
 		Auxiliary: auxiliary,
@@ -83,42 +80,33 @@ func extractVideoStreams(streams []Stream) []Stream {
 // Higher scores indicate more likely to be the primary video content
 func calculateStreamScore(stream Stream, formatDuration float64) float64 {
 	score := 0.0
-	
-	// Codec priority scoring (most important factor)
+
 	score += getCodecScore(stream.CodecName)
-	
-	// Resolution scoring - higher resolution generally indicates main content
+	score += getIndexScore(stream.Index)
+	score += getPixelFormatScore(stream.PixelFormat)
+	score += getDurationScore(stream, formatDuration)
+
 	pixelCount := stream.Width * stream.Height
 	if pixelCount > 0 {
 		// Logarithmic scoring to avoid extreme values
 		score += math.Log10(float64(pixelCount)) * 10
-		
+
 		// Penalty for very small resolutions (likely thumbnails)
 		if pixelCount < 40000 { // 200x200
 			score -= 50
 		}
 	}
-	
-	// Bitrate scoring
+
 	if bitrate := parseBitrate(stream); bitrate > 0 {
 		// Logarithmic scoring for bitrate (in kbps)
 		score += math.Log10(float64(bitrate)/1000) * 15
-		
+
 		// Penalty for very low bitrates (likely thumbnails)
 		if bitrate < 100000 { // 100 kbps
 			score -= 30
 		}
 	}
-	
-	// Stream index preference (lower indices often primary)
-	score += getIndexScore(stream.Index)
-	
-	// Pixel format scoring
-	score += getPixelFormatScore(stream.PixelFormat)
-	
-	// Duration-based scoring (if we can infer stream duration)
-	score += getDurationScore(stream, formatDuration)
-	
+
 	return score
 }
 
@@ -141,17 +129,16 @@ func getCodecScore(codecName string) float64 {
 	case "mpeg2video":
 		return 70
 	case "mjpeg":
-		return 10  // Very low priority - often thumbnails
+		return 10 // Very low priority - often thumbnails
 	case "png", "bmp":
-		return 5   // Likely static images
+		return 5 // Likely static images
 	default:
-		return 50  // Neutral score for unknown codecs
+		return 50 // Neutral score for unknown codecs
 	}
 }
 
 // getIndexScore provides slight preference for lower stream indices
 func getIndexScore(index int) float64 {
-	// Small bonus for being early in stream list
 	return math.Max(0, 5-float64(index))
 }
 
@@ -159,24 +146,23 @@ func getIndexScore(index int) float64 {
 func getPixelFormatScore(pixelFormat string) float64 {
 	pf := strings.ToLower(pixelFormat)
 	score := 0.0
-	
-	// Add points for each characteristic (cumulative)
+
 	if strings.Contains(pf, "yuv") {
-		score += 10  // YUV formats typical for video
+		score += 10 // YUV formats typical for video
 	}
 	if strings.Contains(pf, "420") {
-		score += 8   // 4:2:0 subsampling common for video
+		score += 5 // 4:2:0 subsampling common for video
 	}
 	if strings.Contains(pf, "422") {
-		score += 6   // 4:2:2 subsampling for higher quality
+		score += 5 // 4:2:2 subsampling for higher quality
 	}
 	if strings.Contains(pf, "444") {
-		score += 4   // 4:4:4 no subsampling
+		score += 5 // 4:4:4 no subsampling
 	}
 	if strings.Contains(pf, "rgb") {
-		score -= 5  // RGB more typical for images/thumbnails
+		score -= 5 // RGB more typical for images/thumbnails
 	}
-	
+
 	return score
 }
 
@@ -186,8 +172,7 @@ func getDurationScore(stream Stream, formatDuration float64) float64 {
 	if formatDuration < 10 {
 		return 0
 	}
-	
-	// Look for duration hints in tags
+
 	if stream.Tags != nil {
 		if durationStr, exists := stream.Tags["DURATION"]; exists {
 			if duration := parseDurationTag(durationStr); duration > 0 {
@@ -203,20 +188,18 @@ func getDurationScore(stream Stream, formatDuration float64) float64 {
 			}
 		}
 	}
-	
+
 	return 0
 }
 
 // parseBitrate extracts bitrate from stream, trying multiple fields
 func parseBitrate(stream Stream) int64 {
-	// Try stream bitrate field first
 	if stream.Bitrate != "" {
 		if bitrate, err := strconv.ParseInt(stream.Bitrate, 10, 64); err == nil {
 			return bitrate
 		}
 	}
-	
-	// Try BPS tag
+
 	if stream.Tags != nil {
 		if bps, exists := stream.Tags["BPS"]; exists {
 			if bitrate, err := strconv.ParseInt(bps, 10, 64); err == nil {
@@ -224,7 +207,7 @@ func parseBitrate(stream Stream) int64 {
 			}
 		}
 	}
-	
+
 	return 0
 }
 
@@ -235,10 +218,10 @@ func parseDurationTag(durationStr string) float64 {
 	if len(parts) < 3 {
 		return 0
 	}
-	
+
 	hours, _ := strconv.ParseFloat(parts[0], 64)
 	minutes, _ := strconv.ParseFloat(parts[1], 64)
 	seconds, _ := strconv.ParseFloat(parts[2], 64)
-	
+
 	return hours*3600 + minutes*60 + seconds
 }
