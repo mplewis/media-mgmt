@@ -43,16 +43,15 @@ func (t *HandBrakeTranscoder) checkSizeSavings(ctx context.Context, filePath str
 		return false, err
 	}
 
-	savingsBytes := originalFileSize - estimatedSize
-	savingsPercent := float64(savingsBytes) / float64(originalFileSize) * 100
-
-	if savingsPercent < float64(t.MinSavingsPercent) {
+	sizeRatio := float64(estimatedSize) / float64(originalFileSize)
+	
+	if sizeRatio > t.MaxSizeRatio {
 		encoder := t.selectEncoder(videoInfo, hasVideoToolbox)
 
 		slog.Info("Skipping file, insufficient space savings",
 			"file", filepath.Base(filePath),
-			"estimated_savings", fmt.Sprintf("%.1f%%", savingsPercent),
-			"required_savings", fmt.Sprintf("%d%%", t.MinSavingsPercent))
+			"size_ratio", fmt.Sprintf("%.1f%%", sizeRatio*100),
+			"max_size_ratio", fmt.Sprintf("%.1f%%", t.MaxSizeRatio*100))
 		if err := t.createSkipFile(filePath, "insufficient_savings", originalFileSize, estimatedSize, encoder); err != nil {
 			slog.Warn("Failed to create skip file", "file", filePath, "error", err)
 		}
@@ -61,7 +60,8 @@ func (t *HandBrakeTranscoder) checkSizeSavings(ctx context.Context, filePath str
 
 	slog.Info("Size estimation passed threshold",
 		"file", filepath.Base(filePath),
-		"estimated_savings", fmt.Sprintf("%.1f%%", savingsPercent))
+		"size_ratio", fmt.Sprintf("%.1f%%", sizeRatio*100),
+		"max_size_ratio", fmt.Sprintf("%.1f%%", t.MaxSizeRatio*100))
 	return false, nil
 }
 
@@ -70,7 +70,7 @@ func (t *HandBrakeTranscoder) checkSizeSavings(ctx context.Context, filePath str
 // This prevents re-processing the file in future runs.
 func (t *HandBrakeTranscoder) createSkipFile(filePath string, reason string, originalSize, estimatedSize int64, encoder string) error {
 	skipPath := strings.TrimSuffix(filePath, filepath.Ext(filePath)) + ".skip"
-	requiredSize := int64(float64(originalSize) * (100 - float64(t.MinSavingsPercent)) / 100)
+	requiredSize := int64(float64(originalSize) * t.MaxSizeRatio)
 	skipInfo := SkipInfo{
 		Reason:             reason,
 		Quality:            t.Quality,

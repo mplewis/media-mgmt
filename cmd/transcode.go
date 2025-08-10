@@ -29,7 +29,7 @@ var (
 	transcodeOverwrite    bool
 	transcodeVerbose      bool
 	transcodeQuality      int
-	transcodeMinSavings   int
+	transcodeMaxSizeRatio float64
 )
 
 func init() {
@@ -39,7 +39,7 @@ func init() {
 	transcodeCmd.Flags().BoolVarP(&transcodeOverwrite, "overwrite", "o", false, "Overwrite existing output files")
 	transcodeCmd.Flags().BoolVarP(&transcodeVerbose, "verbose", "v", false, "Enable verbose logging")
 	transcodeCmd.Flags().IntVarP(&transcodeQuality, "quality", "q", 70, "Video quality (0-100, higher is better quality)")
-	transcodeCmd.Flags().IntVarP(&transcodeMinSavings, "min-savings-percent", "m", 20, "Minimum space savings percentage required (0 disables)")
+	transcodeCmd.Flags().Float64VarP(&transcodeMaxSizeRatio, "max-size-ratio", "m", 0.8, "Maximum output size as fraction of input (0.0 disables)")
 }
 
 func runTranscode(cmd *cobra.Command, args []string) error {
@@ -68,12 +68,12 @@ func runTranscode(cmd *cobra.Command, args []string) error {
 	}()
 
 	transcoder := &handbrake.HandBrakeTranscoder{
-		Files:             transcodeFiles,
-		FileListPath:      transcodeFileListPath,
-		OutputSuffix:      transcodeOutputSuffix,
-		Overwrite:         transcodeOverwrite,
-		Quality:           transcodeQuality,
-		MinSavingsPercent: transcodeMinSavings,
+		Files:        transcodeFiles,
+		FileListPath: transcodeFileListPath,
+		OutputSuffix: transcodeOutputSuffix,
+		Overwrite:    transcodeOverwrite,
+		Quality:      transcodeQuality,
+		MaxSizeRatio: transcodeMaxSizeRatio,
 	}
 
 	if err := transcoder.Run(ctx); err != nil {

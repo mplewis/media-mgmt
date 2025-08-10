@@ -26,7 +26,7 @@ type HandBrakeTranscoder struct {
 	OutputSuffix      string   // Suffix for output files (e.g., "-optimized")
 	Overwrite         bool     // Whether to overwrite existing output files
 	Quality           int      // Video quality setting (0-100, higher is better)
-	MinSavingsPercent int      // Minimum space savings required (0 disables)
+	MaxSizeRatio      float64  // Maximum output size as fraction of input (0.0 disables)
 	termWidth         int      // Current terminal width for progress bars
 	termMux           sync.RWMutex // Mutex for terminal width access
 }
@@ -94,7 +94,7 @@ func (t *HandBrakeTranscoder) transcodeFile(ctx context.Context, filePath string
 	}
 
 	// Check for existing skip file first
-	if t.MinSavingsPercent > 0 {
+	if t.MaxSizeRatio > 0.0 {
 		if t.checkSkipFile(filePath) {
 			slog.Info("Skipping media with skip file", "file", filepath.Base(filePath))
 			return nil
@@ -117,7 +117,7 @@ func (t *HandBrakeTranscoder) transcodeFile(ctx context.Context, filePath string
 	}
 
 	// Perform size estimation if minimum savings threshold is set
-	if t.MinSavingsPercent > 0 {
+	if t.MaxSizeRatio > 0.0 {
 		shouldSkip, err := t.checkSizeSavings(ctx, filePath, originalFileSize, videoInfo, hasVideoToolbox)
 		if err != nil {
 			slog.Warn("Size check failed, proceeding with full encode", "file", filePath, "error", err)
