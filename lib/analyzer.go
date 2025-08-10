@@ -157,41 +157,44 @@ func (ma *MediaAnalyzer) parseFFprobeOutput(probe *FFProbeOutput, info *MediaInf
 		}
 	}
 
+	classification := ClassifyVideoStreams(probe.Streams, info.Duration)
+	if classification.Primary != nil {
+		stream := *classification.Primary
+		info.VideoCodec = stream.CodecName
+		info.VideoWidth = stream.Width
+		info.VideoHeight = stream.Height
+		info.VideoProfile = stream.Profile
+		info.PixelFormat = stream.PixelFormat
+		info.ColorSpace = stream.ColorSpace
+		info.ColorTransfer = stream.ColorTransfer
+
+		if stream.Level > 0 {
+			info.VideoLevel = formatLevel(stream.Level)
+		}
+
+		for _, sideData := range stream.SideDataList {
+			if sideData.SideDataType == "DOVI configuration record" {
+				info.HasDolbyVision = true
+				break
+			}
+		}
+
+		if stream.Bitrate != "" {
+			if bitrate, err := strconv.ParseInt(stream.Bitrate, 10, 64); err == nil {
+				info.VideoBitrate = bitrate
+			}
+		} else {
+			if bps, exists := stream.Tags["BPS"]; exists {
+				if bitrate, err := strconv.ParseInt(bps, 10, 64); err == nil {
+					info.VideoBitrate = bitrate
+					info.IsVBR = true
+				}
+			}
+		}
+	}
+
 	for _, stream := range probe.Streams {
 		switch stream.CodecType {
-		case "video":
-			info.VideoCodec = stream.CodecName
-			info.VideoWidth = stream.Width
-			info.VideoHeight = stream.Height
-			info.VideoProfile = stream.Profile
-			info.PixelFormat = stream.PixelFormat
-			info.ColorSpace = stream.ColorSpace
-			info.ColorTransfer = stream.ColorTransfer
-
-			if stream.Level > 0 {
-				info.VideoLevel = formatLevel(stream.Level)
-			}
-
-			for _, sideData := range stream.SideDataList {
-				if sideData.SideDataType == "DOVI configuration record" {
-					info.HasDolbyVision = true
-					break
-				}
-			}
-
-			if stream.Bitrate != "" {
-				if bitrate, err := strconv.ParseInt(stream.Bitrate, 10, 64); err == nil {
-					info.VideoBitrate = bitrate
-				}
-			} else {
-				if bps, exists := stream.Tags["BPS"]; exists {
-					if bitrate, err := strconv.ParseInt(bps, 10, 64); err == nil {
-						info.VideoBitrate = bitrate
-						info.IsVBR = true
-					}
-				}
-			}
-
 		case "audio":
 			track := AudioTrack{
 				Index:    stream.Index,
